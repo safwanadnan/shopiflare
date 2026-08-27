@@ -2,12 +2,11 @@
 
 client_id = "f0256e5d089cfd87e509789c76988c09"
 name = "cloudflaretest"
-application_url = "https://example.com"
+application_url = "https://cloudflaretest.scrptble.workers.dev"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [webhooks]
 api_version = "2026-10"
@@ -25,4 +24,8 @@ api_version = "2026-10"
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://cloudflaretest.scrptble.workers.dev/auth/callback",
+  "https://cloudflaretest.scrptble.workers.dev/auth/shopify/callback",
+  "https://cloudflaretest.scrptble.workers.dev/api/auth/callback"
+]

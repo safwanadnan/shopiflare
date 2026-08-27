@@ -1,4 +1,5 @@
 import { reactRouter } from "@react-router/dev/vite";
+import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
@@ -44,11 +45,11 @@ export default defineConfig({
     port: Number(process.env.PORT || 3000),
     hmr: hmrConfig,
     fs: {
-      // See https://vitejs.dev/config/server-options.html#server-fs-allow for more information
       allow: ["app", "node_modules"],
     },
   },
   plugins: [
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     reactRouter(),
     tsconfigPaths(),
   ],

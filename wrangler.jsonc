@@ -1,0 +1,27 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cloudflaretest",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "./workers/app.ts",
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true,
+  "kv_namespaces": [
+    {
+      "binding": "SHOPIFY_SESSIONS",
+      "id": "db3a9e4525df4509831d5c549a8798cf"
+    }
+  ],
+  "vars": {
+    "SCOPES": "write_products",
+    "SHOPIFY_APP_URL": "https://cloudflaretest.scrptble.workers.dev"
+  }
+}
