@@ -14,10 +14,12 @@
     "enabled": true
   },
   "upload_source_maps": true,
-  "kv_namespaces": [
+  "d1_databases": [
     {
-      "binding": "SHOPIFY_SESSIONS",
-      "id": "db3a9e4525df4509831d5c549a8798cf"
+      "binding": "DB",
+      "database_name": "shopify-app-db",
+      "database_id": "756b2afc-d956-4d2f-8234-3facede0cda3",
+      "migrations_dir": "migrations"
     }
   ],
   "vars": {

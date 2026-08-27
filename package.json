@@ -6,6 +6,10 @@
     "dev": "shopify app dev",
     "dev:cf": "react-router dev",
     "deploy:cf": "npm run build && wrangler deploy",
+    "db:generate": "prisma generate",
+    "db:migrate:diff": "prisma migrate diff --from-empty --to-schema-datamodel ./prisma/schema.prisma --script --output migrations/0001_init.sql",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",
     "deploy": "shopify app deploy",
@@ -26,6 +30,7 @@
     "node": ">=20.19 <22 || >=22.12"
   },
   "dependencies": {
+    "@prisma/adapter-d1": "^7.10.0",
     "@prisma/client": "^6.16.3",
     "@react-router/dev": "^7.12.0",
     "@react-router/fs-routes": "^7.12.0",
@@ -33,7 +38,6 @@
     "@react-router/serve": "^7.12.0",
     "@shopify/app-bridge-react": "^4.2.4",
     "@shopify/shopify-app-react-router": "^1.1.0",
-    "@shopify/shopify-app-session-storage-kv": "^6.0.1",
     "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
     "isbot": "^5.1.31",
     "prisma": "^6.16.3",

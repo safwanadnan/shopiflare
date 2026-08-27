@@ -1,7 +1,11 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { reactRouter } from "@react-router/dev/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176
 // Replace the HOST env var with SHOPIFY_APP_URL so that it doesn't break the Vite server.
@@ -37,6 +41,25 @@ if (host === "localhost") {
 }
 
 export default defineConfig({
+  define: {
+    __dirname: '""',
+  },
+  resolve: {
+    alias: {
+      "#wasm-engine-loader": path.resolve(
+        __dirname,
+        "node_modules/.prisma/client/wasm-worker-loader.mjs",
+      ),
+      ".prisma/client/default": path.resolve(
+        __dirname,
+        "node_modules/.prisma/client/wasm.js",
+      ),
+      ".prisma/client": path.resolve(
+        __dirname,
+        "node_modules/.prisma/client",
+      ),
+    },
+  },
   server: {
     allowedHosts: [host],
     cors: {
@@ -47,6 +70,9 @@ export default defineConfig({
     fs: {
       allow: ["app", "node_modules"],
     },
+  },
+  ssr: {
+    noExternal: true,
   },
   plugins: [
     cloudflare({ viteEnvironment: { name: "ssr" } }),

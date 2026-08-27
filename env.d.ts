@@ -2,11 +2,21 @@
 /// <reference types="@react-router/node" />
 /// <reference types="@cloudflare/workers-types" />
 
-type Env = {
-  SHOPIFY_SESSIONS: KVNamespace;
-  SHOPIFY_API_KEY?: string;
-  SHOPIFY_API_SECRET?: string;
-  SHOPIFY_APP_URL?: string;
-  SCOPES?: string;
-  SHOP_CUSTOM_DOMAIN?: string;
-};
+import "react-router";
+
+declare global {
+  interface Env {
+    DB: D1Database;
+    SHOPIFY_API_KEY: string;
+    SHOPIFY_API_SECRET: string;
+    SCOPES: string;
+    SHOPIFY_APP_URL: string;
+    SHOP_CUSTOM_DOMAIN?: string;
+  }
+}
+
+declare module "react-router" {
+  interface AppLoadContext {
+    cloudflare: { env: Env; ctx: ExecutionContext };
+  }
+}
