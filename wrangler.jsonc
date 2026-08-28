@@ -14,6 +14,7 @@
     "enabled": true
   },
   "upload_source_maps": true,
+  // Top-level = local dev defaults
   "d1_databases": [
     {
       "binding": "DB",
@@ -23,7 +24,38 @@
     }
   ],
   "vars": {
-    "SCOPES": "write_products",
-    "SHOPIFY_APP_URL": "https://cloudflaretest.scrptble.workers.dev"
+    "SCOPES": "write_products"
+  },
+  "env": {
+    "staging": {
+      "name": "cloudflaretest-staging",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "shopify-app-db-staging",
+          "database_id": "f82bb6a6-faa1-415f-aba7-850b92bc31e0",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "SHOPIFY_APP_URL": "https://cloudflaretest-staging.scrptble.workers.dev",
+        "SCOPES": "write_products"
+      }
+    },
+    "production": {
+      "name": "cloudflaretest",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "shopify-app-db",
+          "database_id": "756b2afc-d956-4d2f-8234-3facede0cda3",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "SHOPIFY_APP_URL": "https://cloudflaretest.scrptble.workers.dev",
+        "SCOPES": "write_products"
+      }
+    }
   }
 }
