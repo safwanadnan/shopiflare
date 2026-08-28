@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "f0256e5d089cfd87e509789c76988c09"
-name = "cloudflaretest"
-application_url = "https://cloudflaretest.scrptble.workers.dev"
+name = "shopiflare"
+application_url = "https://shopiflare.scrptble.workers.dev"
 embedded = true
 
 [build]
@@ -25,7 +25,7 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://cloudflaretest.scrptble.workers.dev/auth/callback",
-  "https://cloudflaretest.scrptble.workers.dev/auth/shopify/callback",
-  "https://cloudflaretest.scrptble.workers.dev/api/auth/callback"
+  "https://shopiflare.scrptble.workers.dev/auth/callback",
+  "https://shopiflare.scrptble.workers.dev/auth/shopify/callback",
+  "https://shopiflare.scrptble.workers.dev/api/auth/callback"
 ]

@@ -18,7 +18,7 @@ export function getShopify(env: Env) {
     apiSecretKey: env.SHOPIFY_API_SECRET,
     apiVersion: ApiVersion.October25,
     scopes: env.SCOPES?.split(",") || ["write_products"],
-    appUrl: env.SHOPIFY_APP_URL || "https://cloudflaretest.scrptble.workers.dev",
+    appUrl: env.SHOPIFY_APP_URL || "https://shopiflare.scrptble.workers.dev",
     authPathPrefix: "/auth",
     sessionStorage: new PrismaSessionStorage(prisma),
     distribution: AppDistribution.AppStore,

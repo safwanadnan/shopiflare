@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "<dev-app-client-id>"
-name = "cloudflaretest-dev"
+name = "shopiflare-dev"
 application_url = "https://localhost:8787"
 embedded = true
 

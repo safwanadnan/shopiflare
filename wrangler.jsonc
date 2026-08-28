@@ -4,7 +4,7 @@
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cloudflaretest",
+  "name": "shopiflare",
   "compatibility_date": "2026-08-25",
   "compatibility_flags": [
     "nodejs_compat"
@@ -28,7 +28,7 @@
   },
   "env": {
     "staging": {
-      "name": "cloudflaretest-staging",
+      "name": "shopiflare-staging",
       "d1_databases": [
         {
           "binding": "DB",
@@ -38,12 +38,12 @@
         }
       ],
       "vars": {
-        "SHOPIFY_APP_URL": "https://cloudflaretest-staging.scrptble.workers.dev",
+        "SHOPIFY_APP_URL": "https://shopiflare-staging.scrptble.workers.dev",
         "SCOPES": "write_products"
       }
     },
     "production": {
-      "name": "cloudflaretest",
+      "name": "shopiflare",
       "d1_databases": [
         {
           "binding": "DB",
@@ -53,7 +53,7 @@
         }
       ],
       "vars": {
-        "SHOPIFY_APP_URL": "https://cloudflaretest.scrptble.workers.dev",
+        "SHOPIFY_APP_URL": "https://shopiflare.scrptble.workers.dev",
         "SCOPES": "write_products"
       }
     }

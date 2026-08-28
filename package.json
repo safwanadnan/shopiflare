@@ -1,5 +1,5 @@
 {
-  "name": "cloudflaretest",
+  "name": "shopiflare",
   "private": true,
   "scripts": {
     "build": "react-router build",
