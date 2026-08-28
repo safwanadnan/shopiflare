@@ -12,6 +12,14 @@ let cachedApp: ReturnType<typeof shopifyApp> | undefined;
 export function getShopify(env: Env) {
   if (cachedApp) return cachedApp;
 
+  if (!env.SHOPIFY_API_KEY || !env.SHOPIFY_API_SECRET) {
+    throw new Error(
+      `[Shopiflare] Missing SHOPIFY_API_KEY or SHOPIFY_API_SECRET. Please configure these secrets on your Cloudflare Worker using:\n` +
+      `  npx wrangler secret put SHOPIFY_API_KEY\n` +
+      `  npx wrangler secret put SHOPIFY_API_SECRET`,
+    );
+  }
+
   const prisma = getPrisma(env);
   cachedApp = shopifyApp({
     apiKey: env.SHOPIFY_API_KEY,
