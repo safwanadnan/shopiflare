@@ -19,7 +19,7 @@
     {
       "binding": "DB",
       "database_name": "shopify-app-db",
-      "database_id": "756b2afc-d956-4d2f-8234-3facede0cda3",
+      "database_id": "<your-dev-database-id>",
       "migrations_dir": "migrations"
     }
   ],
@@ -33,12 +33,12 @@
         {
           "binding": "DB",
           "database_name": "shopify-app-db-staging",
-          "database_id": "f82bb6a6-faa1-415f-aba7-850b92bc31e0",
+          "database_id": "<your-staging-database-id>",
           "migrations_dir": "migrations"
         }
       ],
       "vars": {
-        "SHOPIFY_APP_URL": "https://shopiflare-staging.scrptble.workers.dev",
+        "SHOPIFY_APP_URL": "https://shopiflare-staging.<your-account>.workers.dev",
         "SCOPES": "write_products"
       }
     },
@@ -48,12 +48,12 @@
         {
           "binding": "DB",
           "database_name": "shopify-app-db",
-          "database_id": "756b2afc-d956-4d2f-8234-3facede0cda3",
+          "database_id": "<your-production-database-id>",
           "migrations_dir": "migrations"
         }
       ],
       "vars": {
-        "SHOPIFY_APP_URL": "https://shopiflare.scrptble.workers.dev",
+        "SHOPIFY_APP_URL": "https://shopiflare.<your-account>.workers.dev",
         "SCOPES": "write_products"
       }
     }

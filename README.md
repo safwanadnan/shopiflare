@@ -141,7 +141,7 @@ npx wrangler d1 create shopify-app-db
 # Create Staging Database
 npx wrangler d1 create shopify-app-db-staging
 ```
-*Paste the generated `database_id` values into the corresponding blocks in [`wrangler.jsonc`](file:///c:/Users/safwa/shopifyCloudflareApp/cloudflaretest/wrangler.jsonc).*
+*Paste the generated `database_id` values into the corresponding blocks in [`wrangler.jsonc`](/wrangler.jsonc).*
 
 ### 2. Apply Database Migrations
 Shopiflare includes the SQL migrations under `migrations/0001_init.sql`.
