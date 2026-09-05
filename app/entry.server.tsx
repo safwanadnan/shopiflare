@@ -3,6 +3,7 @@ import { renderToReadableStream } from "react-dom/server";
 import type { AppLoadContext, EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 import { addDocumentResponseHeaders } from "./shopify.server";
+import { logger } from "./services/logger.server";
 
 export const streamTimeout = 5000;
 
@@ -26,7 +27,7 @@ export default async function handleRequest(
       signal: request.signal,
       onError(error: unknown) {
         responseStatusCode = 500;
-        console.error(error);
+        logger.error("Encountered unhandled error during React Server-Side Rendering (SSR)", { error });
       },
     },
   );

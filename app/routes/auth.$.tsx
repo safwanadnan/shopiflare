@@ -2,6 +2,8 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopify } from "../shopify.server";
 import { getPrisma } from "../db.server";
+import { enrichShopFromGraphql } from "../services/shop.server";
+import { logger } from "../services/logger.server";
 
 export const loader = async ({ request, context }: LoaderFunctionArgs) => {
   const env = context.cloudflare.env;
@@ -10,61 +12,15 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
   const prisma = getPrisma(env);
 
   try {
-    const shopResponse = await admin.graphql(
-      `#graphql
-        query {
-          shop {
-            id
-            name
-            email
-            myshopifyDomain
-            primaryDomain {
-              host
-              url
-            }
-            currencyCode
-            plan {
-              displayName
-              partnerDevelopment
-            }
-            ianaTimezone
-          }
-        }`,
-    );
-    const shopJson = (await shopResponse.json()) as any;
-    const shop = shopJson?.data?.shop;
-
-    if (shop) {
-      await prisma.shop.upsert({
-        where: { shopifyDomain: session.shop },
-        create: {
-          shopifyDomain: session.shop,
-          domain: shop.primaryDomain?.host || session.shop,
-          name: shop.name,
-          email: shop.email,
-          currency: shop.currencyCode,
-          planName: shop.plan?.displayName,
-          planDisplayName: shop.plan?.displayName,
-          ianaTimezone: shop.ianaTimezone,
-          accessToken: session.accessToken,
-          scope: session.scope,
-        },
-        update: {
-          domain: shop.primaryDomain?.host || session.shop,
-          name: shop.name,
-          email: shop.email,
-          currency: shop.currencyCode,
-          planName: shop.plan?.displayName,
-          planDisplayName: shop.plan?.displayName,
-          ianaTimezone: shop.ianaTimezone,
-          accessToken: session.accessToken,
-          scope: session.scope,
-          uninstalledAt: null,
-        },
-      });
-    }
-  } catch (error) {
-    console.error("Error syncing shop data:", error);
+    await enrichShopFromGraphql(admin, session.shop, prisma, {
+      accessToken: session.accessToken,
+      scope: session.scope,
+    });
+  } catch (error: any) {
+    logger.error(`Failed to sync shop data during OAuth authentication in auth.$ loader for ${session.shop}`, {
+      shopDomain: session.shop,
+      error,
+    });
   }
 
   return null;

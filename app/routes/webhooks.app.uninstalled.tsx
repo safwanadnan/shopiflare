@@ -1,6 +1,8 @@
 import type { ActionFunctionArgs } from "react-router";
 import { getShopify } from "../shopify.server";
 import { getPrisma } from "../db.server";
+import { resolveShop } from "../services/shop.server";
+import { logger } from "../services/logger.server";
 
 export const action = async ({ request, context }: ActionFunctionArgs) => {
   const env = context.cloudflare.env;
@@ -8,7 +10,12 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   const { shop, session, topic } = await shopify.authenticate.webhook(request);
   const prisma = getPrisma(env);
 
-  console.log(`Received ${topic} webhook for ${shop}`);
+  const shopRecord = await resolveShop(prisma, { shopDomain: shop });
+  const shopLogger = logger.withContext({
+    shopId: shopRecord?.id ?? null,
+    shopDomain: shop,
+    topic,
+  });
 
   if (session) {
     await shopify.sessionStorage.deleteSessions([session.id]);
@@ -20,6 +27,10 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
       data: { uninstalledAt: new Date() },
     })
     .catch(() => {});
+
+  shopLogger.info(`Successfully processed app/uninstalled webhook for ${shop}, deleted active sessions and marked store uninstalled`, {
+    sessionIdDeleted: session?.id || null,
+  });
 
   return new Response();
 };

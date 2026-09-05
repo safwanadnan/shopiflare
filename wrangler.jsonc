@@ -11,7 +11,17 @@
   ],
   "main": "./workers/app.ts",
   "observability": {
-    "enabled": true
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false,
+      "persist": true
+    },
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
   },
   "upload_source_maps": true,
   // Top-level = local dev defaults
@@ -39,6 +49,7 @@
       ],
       "vars": {
         "SHOPIFY_APP_URL": "https://shopiflare-staging.<your-account>.workers.dev",
+        "SHOPIFY_API_KEY": "<your-staging-api-key>",
         "SCOPES": "write_products"
       }
     },
@@ -47,13 +58,14 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "shopify-app-db",
+          "database_name": "shopify-app-db-prod",
           "database_id": "<your-production-database-id>",
           "migrations_dir": "migrations"
         }
       ],
       "vars": {
         "SHOPIFY_APP_URL": "https://shopiflare.<your-account>.workers.dev",
+        "SHOPIFY_API_KEY": "<your-production-api-key>",
         "SCOPES": "write_products"
       }
     }

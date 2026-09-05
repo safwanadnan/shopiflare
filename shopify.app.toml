@@ -19,6 +19,18 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  [[webhooks.subscriptions]]
+  topics = [ "shop/update" ]
+  uri = "/webhooks/shop/update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app_subscriptions/update" ]
+  uri = "/webhooks/app_subscriptions/update"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "write_products"

@@ -32,22 +32,114 @@ model Session {
 }
 
 model Shop {
-  id              String    @id @default(cuid())
-  shopifyDomain   String    @unique
-  domain          String?
-  name            String?
-  email           String?
-  currency        String?
-  planName        String?
-  planDisplayName String?
-  ianaTimezone    String?
-  accessToken     String?
-  scope           String?
-  installedAt     DateTime  @default(now())
-  uninstalledAt   DateTime?
-  featureFlags    Json?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                                   String    @id
+  shopifyDomain                        String    @unique
+  domain                               String?
+  name                                 String?
+  email                                String?
+  contactEmail                         String?
+  shopOwner                            String?
+  currency                             String?
+  planName                             String?
+  planDisplayName                      String?
+  isPlus                               Boolean?  @default(false)
+  isPartnerDevelopment                 Boolean?  @default(false)
+  ianaTimezone                         String?
+  timezone                             String?
+  timezoneOffset                       String?
+  unitSystem                           String?
+  weightUnit                           String?
+  primaryLocale                        String?
+
+  // Address & Phone
+  address1                             String?
+  address2                             String?
+  city                                 String?
+  province                             String?
+  provinceCode                         String?
+  country                              String?
+  countryCode                          String?
+  countryName                          String?
+  zip                                  String?
+  phone                                String?
+  latitude                             Float?
+  longitude                            Float?
+
+  // Settings & Capabilities
+  customerAccounts                     String?
+  checkoutApiSupported                 Boolean?  @default(false)
+  taxesIncluded                        Boolean?  @default(false)
+  taxShipping                          Boolean?  @default(false)
+  setupRequired                        Boolean?  @default(false)
+  marketingSmsConsentEnabledAtCheckout Boolean?  @default(false)
+  transactionalSmsDisabled             Boolean?  @default(false)
+  enabledPresentmentCurrencies         Json?
+  currencyFormats                      Json?
+
+  // App credentials & lifecycle
+  accessToken                          String?
+  scope                                String?
+  installedAt                          DateTime  @default(now())
+  uninstalledAt                        DateTime?
+  featureFlags                         Json?
+
+  // Complete raw payload snapshot for complete forward-compatibility
+  rawShopData                          Json?
+
+  shopifyCreatedAt                     DateTime?
+  shopifyUpdatedAt                     DateTime?
+
+  createdAt                            DateTime  @default(now())
+  updatedAt                            DateTime  @updatedAt
+
+  appSubscriptions                     AppSubscription[]
+  shopifyGdprRequests                  ShopifyGdprRequest[]
 
   @@index([shopifyDomain])
+}
+
+model AppSubscription {
+  id                    String    @id @default(cuid())
+  shopifySubscriptionId String    @unique
+  name                  String?
+  status                String?
+  adminGraphqlApiId     String?
+  test                  Boolean?  @default(false)
+  trialDays             Int?
+  currentPeriodEnd      DateTime?
+  price                 Float?
+  currency              String?
+  interval              String?
+  cappedAmount          Float?
+  terms                 String?
+  lineItems             Json?
+  rawPayload            Json?
+
+  shopId                String
+  shop                  Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  shopifyCreatedAt      DateTime?
+  shopifyUpdatedAt      DateTime?
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([shopId])
+  @@index([shopifySubscriptionId])
+  @@index([status])
+}
+
+model ShopifyGdprRequest {
+  id         String   @id @default(cuid())
+  shopId     String?
+  shop       Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shopDomain String?
+  topic      String
+  payload    Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([shopId])
+  @@index([shopDomain])
+  @@index([topic])
 }

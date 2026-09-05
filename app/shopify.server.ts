@@ -6,6 +6,9 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "./session-storage.server";
 import { getPrisma } from "./db.server";
+import { enrichShopFromGraphql } from "./services/shop.server";
+import { syncAppSubscriptionsFromGraphql } from "./services/subscription.server";
+import { logger } from "./services/logger.server";
 
 let cachedApp: ReturnType<typeof shopifyApp> | undefined;
 
@@ -32,6 +35,22 @@ export function getShopify(env: Env) {
     distribution: AppDistribution.AppStore,
     future: {
       expiringOfflineAccessTokens: true,
+    },
+    hooks: {
+      afterAuth: async ({ session, admin }) => {
+        try {
+          await enrichShopFromGraphql(admin, session.shop, prisma, {
+            accessToken: session.accessToken,
+            scope: session.scope,
+          });
+          await syncAppSubscriptionsFromGraphql(admin, session.shop, prisma);
+        } catch (error: any) {
+          logger.error(`Failed afterAuth hook background sync for ${session.shop}`, {
+            shopDomain: session.shop,
+            error,
+          });
+        }
+      },
     },
     ...(env.SHOP_CUSTOM_DOMAIN
       ? { customShopDomains: [env.SHOP_CUSTOM_DOMAIN] }
