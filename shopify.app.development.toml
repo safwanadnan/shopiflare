@@ -1,8 +1,9 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "<your-staging-client-id>"
-name = "shopiflare-staging"
-application_url = "https://shopiflare-staging.<your-account>.workers.dev"
+client_id = "<your-dev-client-id>"
+name = "Shopiflare Development"
+handle = "shopiflare-development"
+application_url = "https://shopiflare-development.<your-account>.workers.dev"
 embedded = true
 
 [build]
@@ -37,7 +38,7 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [
-  "https://shopiflare-staging.<your-account>.workers.dev/auth/callback",
-  "https://shopiflare-staging.<your-account>.workers.dev/auth/shopify/callback",
-  "https://shopiflare-staging.<your-account>.workers.dev/api/auth/callback"
+  "https://shopiflare-development.<your-account>.workers.dev/auth/callback",
+  "https://shopiflare-development.<your-account>.workers.dev/auth/shopify/callback",
+  "https://shopiflare-development.<your-account>.workers.dev/api/auth/callback"
 ]

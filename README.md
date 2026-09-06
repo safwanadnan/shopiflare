@@ -61,9 +61,9 @@ shopiflare/
 
 | Environment | Cloudflare Worker | D1 Database | Shopify App Config | Git Branch |
 |---|---|---|---|---|
-| **Local** | `wrangler dev` (via Vite Plugin) | Local D1 Emulation (`.wrangler/state`) | `shopify.app.dev.toml` | Working Branch (`feature/*`) |
-| **Staging** | `shopiflare-staging` | `shopify-app-db-staging` | `shopify.app.staging.toml` | `staging` |
-| **Production** | `shopiflare` | `shopify-app-db-prod` | `shopify.app.toml` | `main` |
+| **Local** | `wrangler dev` (via Vite Plugin) | Local D1 Emulation (`.wrangler/state`) | `shopify.app.development.toml` | Working Branch (`feature/*`) |
+| **Development (Remote)** | `shopiflare-development` | `shopiflare-shopify-app-db-dev` | `shopify.app.development.toml` | `develop` / `main` |
+| **Production** | `shopiflare` | `shopiflare-shopify-app-db-prod` | `shopify.app.toml` | `main` |
 
 ---
 
@@ -92,10 +92,10 @@ npm install
 If setting up new Cloudflare D1 databases for your app:
 ```bash
 # Create Production Database
-npx wrangler d1 create shopify-app-db-prod
+npx wrangler d1 create shopiflare-shopify-app-db-prod
 
-# Create Staging Database
-npx wrangler d1 create shopify-app-db-staging
+# Create Development Database
+npx wrangler d1 create shopiflare-shopify-app-db-dev
 ```
 *Copy the generated `database_id` values into the corresponding blocks in [`wrangler.jsonc`](./wrangler.jsonc).*
 
@@ -106,11 +106,11 @@ Shopiflare includes the initial SQL migration in `migrations/0001_init.sql`. App
 # Apply to Local D1 database (used by local dev server)
 npm run db:migrate:local
 
-# Apply to Remote Staging D1 database
-npm run db:migrate:staging
+# Apply to Remote Development D1 database
+npm run db:migrate:dev
 
 # Apply to Remote Production D1 database
-npm run db:migrate:production
+npm run db:migrate:prod
 ```
 
 ### 3. Modifying the Schema with Drizzle Kit
@@ -122,9 +122,9 @@ When you add or update models in `app/db/schema.ts`:
    *Drizzle Kit will inspect `app/db/schema.ts` and create the next numbered SQL migration in `migrations/`.*
 2. Apply the migration to your desired environment:
    ```bash
-   npm run db:migrate:local       # Local
-   npm run db:migrate:staging     # Staging
-   npm run db:migrate:production  # Production
+   npm run db:migrate:local  # Local
+   npm run db:migrate:dev    # Remote Development
+   npm run db:migrate:prod   # Remote Production
    ```
 
 ---
@@ -145,9 +145,9 @@ SCOPES=write_products
 Upload your Shopify API credentials as encrypted Cloudflare Worker secrets:
 
 ```bash
-# Staging Secrets
-npx wrangler secret put SHOPIFY_API_KEY --env staging
-npx wrangler secret put SHOPIFY_API_SECRET --env staging
+# Development Secrets
+npx wrangler secret put SHOPIFY_API_KEY --env development
+npx wrangler secret put SHOPIFY_API_SECRET --env development
 
 # Production Secrets
 npx wrangler secret put SHOPIFY_API_KEY --env production
@@ -274,22 +274,22 @@ Because the Cloudflare Workers Vite plugin simulates D1 and Worker bindings dire
 ### Deploy Code to Cloudflare Workers
 
 ```bash
-# Deploy to Staging Worker
-npm run deploy:staging
+# Deploy to Development Worker
+npm run deploy:dev
 
 # Deploy to Production Worker
-npm run deploy:production
+npm run deploy:prod
 ```
 
 ### Deploy App Configuration to Shopify
 Whenever you modify scopes, app URLs, or webhook declarations in your TOML files, sync them with Shopify:
 
 ```bash
-# Deploy Staging Shopify App Config
-npm run deploy:shopify:staging
+# Deploy Development Shopify App Config
+npm run deploy:shopify:dev
 
 # Deploy Production Shopify App Config
-npm run deploy:shopify:production
+npm run deploy:shopify:prod
 ```
 
 ---
@@ -300,14 +300,14 @@ npm run deploy:shopify:production
 |---|---|
 | `npm run dev:cf` | Starts the local React Router dev server with Cloudflare Workers emulation |
 | `npm run build` | Builds the client and server bundles using Vite SSR (Zero-WASM) |
-| `npm run deploy:staging` | Builds and deploys the worker to the **Staging** Cloudflare environment |
-| `npm run deploy:production` | Builds and deploys the worker to the **Production** Cloudflare environment |
+| `npm run deploy:dev` | Builds and deploys the worker to the **Development** Cloudflare environment |
+| `npm run deploy:prod` | Builds and deploys the worker to the **Production** Cloudflare environment |
 | `npm run db:generate` | Generates new SQL migrations from `app/db/schema.ts` using Drizzle Kit |
 | `npm run db:migrate:local` | Applies SQL migrations to the local D1 database |
-| `npm run db:migrate:staging` | Applies SQL migrations to remote staging D1 database |
-| `npm run db:migrate:production` | Applies SQL migrations to remote production D1 database |
-| `npm run deploy:shopify:staging` | Pushes staging app scopes, webhooks, and URLs to Shopify |
-| `npm run deploy:shopify:production` | Pushes production app scopes, webhooks, and URLs to Shopify |
+| `npm run db:migrate:dev` | Applies SQL migrations to remote development D1 database |
+| `npm run db:migrate:prod` | Applies SQL migrations to remote production D1 database |
+| `npm run deploy:shopify:dev` | Pushes development app scopes, webhooks, and URLs to Shopify |
+| `npm run deploy:shopify:prod` | Pushes production app scopes, webhooks, and URLs to Shopify |
 | `npm run typecheck` | Runs TypeScript typechecker and React Router typegen |
 
 ---

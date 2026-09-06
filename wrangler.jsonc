@@ -28,28 +28,29 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "shopify-app-db",
+      "database_name": "shopiflare-shopify-app-db-dev",
       "database_id": "<your-dev-database-id>",
       "migrations_dir": "migrations"
     }
   ],
   "vars": {
+    "SHOPIFY_API_KEY": "<your-dev-api-key>",
     "SCOPES": "write_products"
   },
   "env": {
-    "staging": {
-      "name": "shopiflare-staging",
+    "development": {
+      "name": "shopiflare-development",
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "shopify-app-db-staging",
-          "database_id": "<your-staging-database-id>",
+          "database_name": "shopiflare-shopify-app-db-dev",
+          "database_id": "<your-dev-database-id>",
           "migrations_dir": "migrations"
         }
       ],
       "vars": {
-        "SHOPIFY_APP_URL": "https://shopiflare-staging.<your-account>.workers.dev",
-        "SHOPIFY_API_KEY": "<your-staging-api-key>",
+        "SHOPIFY_APP_URL": "https://shopiflare-development.<your-account>.workers.dev",
+        "SHOPIFY_API_KEY": "<your-dev-api-key>",
         "SCOPES": "write_products"
       }
     },
@@ -58,7 +59,7 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "shopify-app-db-prod",
+          "database_name": "shopiflare-shopify-app-db-prod",
           "database_id": "<your-production-database-id>",
           "migrations_dir": "migrations"
         }
