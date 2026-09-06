@@ -8,8 +8,7 @@
     "deploy:cf": "npm run build && wrangler deploy",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "deploy:production": "npm run build && wrangler deploy --env production",
-    "db:generate": "prisma generate && node scripts/sync-prisma-types.js",
-    "db:migrate:diff": "prisma migrate diff --from-empty --to-schema-datamodel ./prisma/schema.prisma --script --output migrations/0001_init.sql",
+    "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:migrate:staging": "wrangler d1 migrations apply DB --remote --env staging",
@@ -23,10 +22,9 @@
     "env": "shopify app env",
     "start": "react-router-serve ./build/server/index.js",
     "docker-start": "npm run setup && npm run start",
-    "setup": "prisma generate && node scripts/sync-prisma-types.js && prisma migrate deploy",
+    "setup": "npm run build",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
-    "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
     "typecheck": "react-router typegen && tsc --noEmit"
@@ -36,21 +34,18 @@
     "node": ">=20.19 <22 || >=22.12"
   },
   "dependencies": {
-    "@prisma/adapter-d1": "^7.10.0",
-    "@prisma/client": "^6.16.3",
     "@react-router/dev": "^7.12.0",
     "@react-router/fs-routes": "^7.12.0",
     "@react-router/node": "^7.12.0",
     "@react-router/serve": "^7.12.0",
     "@shopify/app-bridge-react": "^4.2.4",
     "@shopify/shopify-app-react-router": "^1.1.0",
-    "@shopify/shopify-app-session-storage-prisma": "^9.0.0",
     "isbot": "^5.1.31",
-    "prisma": "^6.16.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "^7.12.0",
-    "vite-tsconfig-paths": "^6.0.4"
+    "vite-tsconfig-paths": "^6.0.4",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.54.0",
@@ -74,7 +69,8 @@
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "wrangler": "^4.126.0"
+    "wrangler": "^4.126.0",
+    "drizzle-kit": "^0.31.10"
   },
   "workspaces": [
     "extensions/*"

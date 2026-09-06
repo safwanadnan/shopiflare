@@ -1,4 +1,6 @@
-import type { PrismaClient } from "@prisma/client";
+import { eq } from "drizzle-orm";
+import type { AppDb } from "../db.server";
+import { shops, type ShopRecord, type InsertShopRecord } from "../db/schema";
 import { logger } from "./logger.server";
 
 export const SHOP_ENRICHMENT_QUERY = `#graphql
@@ -56,193 +58,168 @@ export const SHOP_ENRICHMENT_QUERY = `#graphql
       transactionalSmsDisabled
       createdAt
       updatedAt
-      url
     }
   }
 `;
 
-interface ShopCredentials {
-  accessToken?: string | null;
-  scope?: string | null;
+export interface AuthSessionCredentials {
+  accessToken?: string;
+  scope?: string;
 }
 
-/**
- * Extracts the numeric Shopify ID by stripping any GID prefix (e.g. gid://shopify/Shop/12345 -> 12345).
- */
-export function extractNumericShopId(rawId?: string | number | null): string | null {
-  if (!rawId) return null;
-  const str = String(rawId).trim();
-  if (str.startsWith("gid://")) {
-    const parts = str.split("/");
-    return parts[parts.length - 1] || null;
-  }
-  return str;
-}
-
-/**
- * Resolves a Shop record from shopId or shopDomain.
- */
 export async function resolveShop(
-  prisma: PrismaClient,
-  options: { shopId?: string | null; shopDomain?: string | null },
-) {
-  const { shopId, shopDomain } = options;
-
-  if (shopId) {
-    const cleanId = extractNumericShopId(shopId);
-    if (cleanId) {
-      const shop = await prisma.shop.findUnique({
-        where: { id: cleanId },
-      });
-      if (shop) return shop;
-    }
+  db: AppDb,
+  identifiers: { shopId?: string | null; shopDomain?: string | null },
+): Promise<ShopRecord | null> {
+  if (identifiers.shopId) {
+    const shop = await db.query.shops.findFirst({
+      where: eq(shops.id, identifiers.shopId),
+    });
+    if (shop) return shop;
   }
 
-  if (shopDomain) {
-    const cleanDomain = shopDomain.toLowerCase().trim();
-    return prisma.shop.findFirst({
-      where: {
-        OR: [
-          { shopifyDomain: cleanDomain },
-          { domain: cleanDomain },
-        ],
-      },
+  if (identifiers.shopDomain) {
+    const shop = await db.query.shops.findFirst({
+      where: eq(shops.shopifyDomain, identifiers.shopDomain),
     });
+    if (shop) return shop;
   }
 
   return null;
 }
 
-/**
- * Enriches the Shop model in the database using the full GraphQL Admin query.
- */
 export async function enrichShopFromGraphql(
-  admin: { graphql: (query: string, options?: any) => Promise<Response> },
-  shopifyDomain: string,
-  prisma: PrismaClient,
-  credentials?: ShopCredentials,
-) {
+  admin: { graphql: (query: string, options?: any) => Promise<any> },
+  shopDomain: string,
+  db: AppDb,
+  authCredentials?: AuthSessionCredentials,
+): Promise<ShopRecord | null> {
+  const shopLogger = logger.withContext({ shopDomain });
   try {
     const response = await admin.graphql(SHOP_ENRICHMENT_QUERY);
-    const json = (await response.json()) as any;
-    const shop = json?.data?.shop;
+    const json = await response.json();
 
-    if (!shop) {
-      logger.warn(`Shop enrichment query returned no shop data for domain ${shopifyDomain}`, {
-        shopDomain: shopifyDomain,
+    if (json.errors && json.errors.length > 0) {
+      shopLogger.error("GraphQL errors while executing ShopEnrichment query", {
+        errors: json.errors,
       });
       return null;
     }
 
-    const numericShopId = extractNumericShopId(shop.id);
-
-    const dataToSave = {
-      shopifyDomain,
-      domain: shop.primaryDomain?.host || shop.myshopifyDomain || shopifyDomain,
-      name: shop.name || null,
-      email: shop.email || null,
-      contactEmail: shop.contactEmail || null,
-      shopOwner: shop.shopOwnerName || null,
-      currency: shop.currencyCode || null,
-      planName: shop.plan?.displayName || null,
-      planDisplayName: shop.plan?.displayName || null,
-      isPlus: Boolean(shop.plan?.shopifyPlus),
-      isPartnerDevelopment: Boolean(shop.plan?.partnerDevelopment),
-      ianaTimezone: shop.ianaTimezone || null,
-      timezone: shop.timezoneAbbreviation || null,
-      timezoneOffset: shop.timezoneOffset || null,
-      unitSystem: shop.unitSystem || null,
-      weightUnit: shop.weightUnit || null,
-
-      // Address
-      address1: shop.billingAddress?.address1 || null,
-      address2: shop.billingAddress?.address2 || null,
-      city: shop.billingAddress?.city || null,
-      province: shop.billingAddress?.province || null,
-      provinceCode: shop.billingAddress?.provinceCode || null,
-      country: shop.billingAddress?.country || null,
-      countryCode: shop.billingAddress?.countryCodeV2 || null,
-      countryName: shop.billingAddress?.country || null,
-      zip: shop.billingAddress?.zip || null,
-      phone: shop.billingAddress?.phone || null,
-      latitude: shop.billingAddress?.latitude != null ? Number(shop.billingAddress.latitude) : null,
-      longitude: shop.billingAddress?.longitude != null ? Number(shop.billingAddress.longitude) : null,
-
-      // Capabilities & Flags
-      customerAccounts: shop.customerAccounts || null,
-      checkoutApiSupported: Boolean(shop.checkoutApiSupported),
-      taxesIncluded: Boolean(shop.taxesIncluded),
-      taxShipping: Boolean(shop.taxShipping),
-      setupRequired: Boolean(shop.setupRequired),
-      marketingSmsConsentEnabledAtCheckout: Boolean(shop.marketingSmsConsentEnabledAtCheckout),
-      transactionalSmsDisabled: Boolean(shop.transactionalSmsDisabled),
-
-      enabledPresentmentCurrencies: shop.enabledPresentmentCurrencies || null,
-      currencyFormats: shop.currencyFormats || null,
-
-      rawShopData: shop,
-
-      shopifyCreatedAt: shop.createdAt ? new Date(shop.createdAt) : null,
-      shopifyUpdatedAt: shop.updatedAt ? new Date(shop.updatedAt) : null,
-      uninstalledAt: null,
-      ...(credentials?.accessToken ? { accessToken: credentials.accessToken } : {}),
-      ...(credentials?.scope ? { scope: credentials.scope } : {}),
-    };
-
-    // Check if shop already exists with an older ID and migrate if needed
-    const existing = await prisma.shop.findUnique({
-      where: { shopifyDomain },
-      select: { id: true },
-    });
-
-    if (existing && numericShopId && existing.id !== numericShopId) {
-      logger.info(`Migrating Shop database primary key from legacy ID ${existing.id} to numeric ID ${numericShopId}`, {
-        shopId: numericShopId,
-        shopDomain: shopifyDomain,
-        oldId: existing.id,
-      });
-      await prisma.$executeRawUnsafe(`UPDATE "Shop" SET id = ? WHERE id = ?`, numericShopId, existing.id);
-      await prisma.$executeRawUnsafe(`UPDATE "AppSubscription" SET shopId = ? WHERE shopId = ?`, numericShopId, existing.id);
-      await prisma.$executeRawUnsafe(`UPDATE "ShopifyGdprRequest" SET shopId = ? WHERE shopId = ?`, numericShopId, existing.id);
+    const rawShop = json?.data?.shop;
+    if (!rawShop || !rawShop.id) {
+      shopLogger.warn("ShopEnrichment returned empty or malformed shop data payload", { rawShop });
+      return null;
     }
 
-    const record = await prisma.shop.upsert({
-      where: { shopifyDomain },
-      create: {
-        id: numericShopId || shopifyDomain,
-        ...dataToSave,
-      },
-      update: dataToSave,
+    const numericShopId = rawShop.id.replace(/\D/g, "");
+    const plan = rawShop.plan || {};
+    const billing = rawShop.billingAddress || {};
+
+    const shopData: InsertShopRecord = {
+      id: numericShopId,
+      shopifyDomain: shopDomain,
+      domain: rawShop.primaryDomain?.host || null,
+      name: rawShop.name || null,
+      email: rawShop.email || null,
+      contactEmail: rawShop.contactEmail || null,
+      shopOwner: rawShop.shopOwnerName || null,
+      currency: rawShop.currencyCode || null,
+      planName: plan.displayName || null,
+      planDisplayName: plan.displayName || null,
+      isPlus: Boolean(plan.shopifyPlus),
+      isPartnerDevelopment: Boolean(plan.partnerDevelopment),
+      ianaTimezone: rawShop.ianaTimezone || null,
+      timezone: rawShop.timezoneAbbreviation || null,
+      timezoneOffset: rawShop.timezoneOffset ? String(rawShop.timezoneOffset) : null,
+      unitSystem: rawShop.unitSystem || null,
+      weightUnit: rawShop.weightUnit || null,
+      primaryLocale: null,
+
+      address1: billing.address1 || null,
+      address2: billing.address2 || null,
+      city: billing.city || null,
+      province: billing.province || null,
+      provinceCode: billing.provinceCode || null,
+      country: billing.country || null,
+      countryCode: billing.countryCodeV2 || null,
+      countryName: billing.country || null,
+      zip: billing.zip || null,
+      phone: billing.phone || null,
+      latitude: billing.latitude != null ? Number(billing.latitude) : null,
+      longitude: billing.longitude != null ? Number(billing.longitude) : null,
+
+      customerAccounts: rawShop.customerAccounts || null,
+      checkoutApiSupported: Boolean(rawShop.checkoutApiSupported),
+      taxesIncluded: Boolean(rawShop.taxesIncluded),
+      taxShipping: Boolean(rawShop.taxShipping),
+      setupRequired: Boolean(rawShop.setupRequired),
+      marketingSmsConsentEnabledAtCheckout: Boolean(rawShop.marketingSmsConsentEnabledAtCheckout),
+      transactionalSmsDisabled: Boolean(rawShop.transactionalSmsDisabled),
+      enabledPresentmentCurrencies: Array.isArray(rawShop.enabledPresentmentCurrencies)
+        ? JSON.stringify(rawShop.enabledPresentmentCurrencies)
+        : null,
+      currencyFormats: rawShop.currencyFormats ? JSON.stringify(rawShop.currencyFormats) : null,
+
+      accessToken: authCredentials?.accessToken || null,
+      scope: authCredentials?.scope || null,
+      uninstalledAt: null,
+
+      rawShopData: JSON.stringify(rawShop),
+
+      shopifyCreatedAt: rawShop.createdAt ? new Date(rawShop.createdAt) : null,
+      shopifyUpdatedAt: rawShop.updatedAt ? new Date(rawShop.updatedAt) : null,
+      updatedAt: new Date(),
+    };
+
+    const updateSet = { ...shopData };
+    delete (updateSet as any).id;
+
+    await db
+      .insert(shops)
+      .values(shopData)
+      .onConflictDoUpdate({
+        target: shops.shopifyDomain,
+        set: updateSet,
+      });
+
+    const savedShop = await db.query.shops.findFirst({
+      where: eq(shops.shopifyDomain, shopDomain),
     });
 
-    logger.info(`Successfully enriched and saved Shop data from Shopify GraphQL Admin for ${shopifyDomain}`, {
-      shopId: record.id,
-      shopDomain: shopifyDomain,
-      plan: record.planDisplayName || null,
+    shopLogger.info(`Successfully enriched and synchronized store profile for ${shopDomain}`, {
+      shopId: numericShopId,
+      plan: plan.displayName || "Unknown",
+      currency: rawShop.currencyCode,
     });
-    return record;
+
+    return savedShop || null;
   } catch (error: any) {
-    logger.error(`Failed to enrich Shop data from GraphQL Admin for ${shopifyDomain}`, {
-      shopDomain: shopifyDomain,
+    shopLogger.error(`Exception occurred during store profile enrichment for ${shopDomain}`, {
       error,
     });
     return null;
   }
 }
 
-/**
- * Enriches the Shop model in the database from a shop/update webhook payload (handles REST snake_case).
- */
 export async function enrichShopFromWebhookPayload(
-  payload: Record<string, any>,
-  shopifyDomain: string,
-  prisma: PrismaClient,
-) {
+  payload: any,
+  shopDomain: string,
+  db: AppDb,
+): Promise<ShopRecord | null> {
+  const shopLogger = logger.withContext({ shopDomain });
   try {
-    if (!payload || typeof payload !== "object") return null;
+    if (!payload || !payload.id) {
+      shopLogger.warn("Shop webhook payload does not contain a valid ID", { payload });
+      return null;
+    }
 
-    const dataToSave = {
-      domain: payload.domain || payload.myshopify_domain || shopifyDomain,
+    const numericShopId = String(payload.id).replace(/\D/g, "");
+
+    const shopData: InsertShopRecord = {
+      id: numericShopId,
+      shopifyDomain: shopDomain,
+      domain: payload.domain || null,
       name: payload.name || null,
       email: payload.email || null,
       contactEmail: payload.customer_email || payload.email || null,
@@ -252,11 +229,11 @@ export async function enrichShopFromWebhookPayload(
       planDisplayName: payload.plan_display_name || payload.plan_name || null,
       ianaTimezone: payload.iana_timezone || null,
       timezone: payload.timezone || null,
+      timezoneOffset: payload.timezone_offset ? String(payload.timezone_offset) : null,
       unitSystem: payload.unit_system || null,
       weightUnit: payload.weight_unit || null,
       primaryLocale: payload.primary_locale || null,
 
-      // Address
       address1: payload.address1 || null,
       address2: payload.address2 || null,
       city: payload.city || null,
@@ -270,71 +247,48 @@ export async function enrichShopFromWebhookPayload(
       latitude: payload.latitude != null ? Number(payload.latitude) : null,
       longitude: payload.longitude != null ? Number(payload.longitude) : null,
 
-      // Capabilities & Flags
       customerAccounts: payload.customer_accounts || null,
-      checkoutApiSupported: payload.checkout_api_supported != null ? Boolean(payload.checkout_api_supported) : undefined,
-      taxesIncluded: payload.taxes_included != null ? Boolean(payload.taxes_included) : undefined,
-      taxShipping: payload.tax_shipping != null ? Boolean(payload.tax_shipping) : undefined,
-      setupRequired: payload.setup_required != null ? Boolean(payload.setup_required) : undefined,
-      marketingSmsConsentEnabledAtCheckout:
-        payload.marketing_sms_consent_enabled_at_checkout != null
-          ? Boolean(payload.marketing_sms_consent_enabled_at_checkout)
-          : undefined,
-      transactionalSmsDisabled:
-        payload.transactional_sms_disabled != null ? Boolean(payload.transactional_sms_disabled) : undefined,
+      checkoutApiSupported: Boolean(payload.checkout_api_supported),
+      taxesIncluded: Boolean(payload.taxes_included),
+      taxShipping: Boolean(payload.tax_shipping),
+      setupRequired: Boolean(payload.setup_required),
+      marketingSmsConsentEnabledAtCheckout: Boolean(payload.marketing_sms_consent_enabled_at_checkout),
+      transactionalSmsDisabled: Boolean(payload.transactional_sms_disabled),
+      enabledPresentmentCurrencies: Array.isArray(payload.enabled_presentment_currencies)
+        ? JSON.stringify(payload.enabled_presentment_currencies)
+        : null,
 
-      enabledPresentmentCurrencies: payload.enabled_presentment_currencies || null,
-      currencyFormats: payload.money_format ? { moneyFormat: payload.money_format } : null,
-
-      rawShopData: payload,
+      uninstalledAt: null,
+      rawShopData: JSON.stringify(payload),
 
       shopifyCreatedAt: payload.created_at ? new Date(payload.created_at) : null,
       shopifyUpdatedAt: payload.updated_at ? new Date(payload.updated_at) : null,
-      uninstalledAt: null,
+      updatedAt: new Date(),
     };
 
-    // Filter out undefined values to avoid overwriting existing good data with undefined
-    const cleanedData = Object.fromEntries(
-      Object.entries(dataToSave).filter(([_, v]) => v !== undefined)
-    );
+    const updateSet = { ...shopData };
+    delete (updateSet as any).id;
 
-    const numericShopId = extractNumericShopId(payload.id || payload.admin_graphql_api_id);
-
-    const existing = await prisma.shop.findUnique({
-      where: { shopifyDomain },
-      select: { id: true },
-    });
-
-    if (existing && numericShopId && existing.id !== numericShopId) {
-      logger.info(`Migrating Shop database primary key from legacy ID ${existing.id} to numeric ID ${numericShopId} via webhook`, {
-        shopId: numericShopId,
-        shopDomain: shopifyDomain,
-        oldId: existing.id,
+    await db
+      .insert(shops)
+      .values(shopData)
+      .onConflictDoUpdate({
+        target: shops.shopifyDomain,
+        set: updateSet,
       });
-      await prisma.$executeRawUnsafe(`UPDATE "Shop" SET id = ? WHERE id = ?`, numericShopId, existing.id);
-      await prisma.$executeRawUnsafe(`UPDATE "AppSubscription" SET shopId = ? WHERE shopId = ?`, numericShopId, existing.id);
-      await prisma.$executeRawUnsafe(`UPDATE "ShopifyGdprRequest" SET shopId = ? WHERE shopId = ?`, numericShopId, existing.id);
-    }
 
-    const record = await prisma.shop.upsert({
-      where: { shopifyDomain },
-      create: {
-        id: numericShopId || shopifyDomain,
-        shopifyDomain,
-        ...cleanedData,
-      } as any,
-      update: cleanedData as any,
+    const savedShop = await db.query.shops.findFirst({
+      where: eq(shops.shopifyDomain, shopDomain),
     });
 
-    logger.info(`Successfully updated Shop data from shop/update webhook for ${shopifyDomain}`, {
-      shopId: record.id,
-      shopDomain: shopifyDomain,
-      plan: record.planDisplayName || null,
+    shopLogger.info(`Successfully updated store profile from shop/update webhook for ${shopDomain}`, {
+      shopId: numericShopId,
+      plan: payload.plan_display_name || payload.plan_name || "Unknown",
     });
-    return record;
+
+    return savedShop || null;
   } catch (error: any) {
-    logger.error(`Failed to process Shop data from shop/update webhook for ${shopifyDomain}`, {
-      shopDomain: shopifyDomain,
+    shopLogger.error(`Exception during shop webhook payload synchronization for ${shopDomain}`, {
       error,
     });
     return null;

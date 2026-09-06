@@ -2,8 +2,10 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { eq } from "drizzle-orm";
 import { getShopify } from "../shopify.server";
-import { getPrisma } from "../db.server";
+import { getDb } from "../db.server";
+import { shops } from "../db/schema";
 import { enrichShopFromGraphql } from "../services/shop.server";
 import { syncAppSubscriptionsFromGraphql } from "../services/subscription.server";
 import { logger } from "../services/logger.server";
@@ -12,23 +14,23 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
   const env = context.cloudflare.env;
   const shopify = getShopify(env);
   const { session, admin } = await shopify.authenticate.admin(request);
-  const prisma = getPrisma(env);
+  const db = getDb(env);
 
-  // Background self-healing check: enrich shop data and sync subscriptions
+  // Background self-healing check: enrich shop data and sync subscriptions ONLY if not yet populated
   context.cloudflare.ctx.waitUntil(
     (async () => {
       try {
-        const shop = await prisma.shop.findUnique({
-          where: { shopifyDomain: session.shop },
-          select: { rawShopData: true },
+        const shop = await db.query.shops.findFirst({
+          where: eq(shops.shopifyDomain, session.shop),
+          columns: { rawShopData: true },
         });
         if (!shop || !shop.rawShopData) {
-          await enrichShopFromGraphql(admin, session.shop, prisma, {
+          await enrichShopFromGraphql(admin, session.shop, db, {
             accessToken: session.accessToken,
             scope: session.scope,
           });
+          await syncAppSubscriptionsFromGraphql(admin, session.shop, db);
         }
-        await syncAppSubscriptionsFromGraphql(admin, session.shop, prisma);
       } catch (err: any) {
         logger.error(`Failed background shop enrichment and subscription sync in app.loader for ${session.shop}`, {
           shopDomain: session.shop,

@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import { getShopify } from "../shopify.server";
-import { getPrisma } from "../db.server";
+import { getDb } from "../db.server";
 import {
   processAppSubscriptionWebhook,
   syncAppSubscriptionsFromGraphql,
@@ -12,9 +12,9 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   const env = context.cloudflare.env;
   const shopify = getShopify(env);
   const { shop, payload, topic } = await shopify.authenticate.webhook(request);
-  const prisma = getPrisma(env);
+  const db = getDb(env);
 
-  const shopRecord = await resolveShop(prisma, { shopDomain: shop });
+  const shopRecord = await resolveShop(db, { shopDomain: shop });
   const shopLogger = logger.withContext({
     shopId: shopRecord?.id ?? null,
     shopDomain: shop,
@@ -22,7 +22,7 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   });
 
   // 1. Process and save the incoming webhook payload
-  const record = await processAppSubscriptionWebhook(payload, shop, prisma);
+  const record = await processAppSubscriptionWebhook(payload, shop, db);
 
   shopLogger.info(`Successfully processed app_subscriptions/update webhook for ${shop} (subscription: ${record?.shopifySubscriptionId || "none"})`, {
     subscriptionId: record?.shopifySubscriptionId || null,
@@ -34,7 +34,7 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
     const unauth = await shopify.unauthenticated.admin(shop);
     if (unauth?.admin) {
       context.cloudflare.ctx.waitUntil(
-        syncAppSubscriptionsFromGraphql(unauth.admin, shop, prisma),
+        syncAppSubscriptionsFromGraphql(unauth.admin, shop, db),
       );
     }
   } catch (err: any) {

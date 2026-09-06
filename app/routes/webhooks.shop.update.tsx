@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import { getShopify } from "../shopify.server";
-import { getPrisma } from "../db.server";
+import { getDb } from "../db.server";
 import {
   enrichShopFromWebhookPayload,
   enrichShopFromGraphql,
@@ -12,9 +12,9 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   const env = context.cloudflare.env;
   const shopify = getShopify(env);
   const { shop, payload, topic } = await shopify.authenticate.webhook(request);
-  const prisma = getPrisma(env);
+  const db = getDb(env);
 
-  const shopRecord = await resolveShop(prisma, { shopDomain: shop });
+  const shopRecord = await resolveShop(db, { shopDomain: shop });
   const shopLogger = logger.withContext({
     shopId: shopRecord?.id ?? null,
     shopDomain: shop,
@@ -22,7 +22,7 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   });
 
   // Immediate enrichment from webhook payload
-  const updatedRecord = await enrichShopFromWebhookPayload(payload, shop, prisma);
+  const updatedRecord = await enrichShopFromWebhookPayload(payload, shop, db);
 
   shopLogger.info(`Successfully processed shop/update webhook for ${shop}`, {
     shopId: updatedRecord?.id || shopRecord?.id || null,
@@ -34,7 +34,7 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
     const unauth = await shopify.unauthenticated.admin(shop);
     if (unauth?.admin) {
       context.cloudflare.ctx.waitUntil(
-        enrichShopFromGraphql(unauth.admin, shop, prisma),
+        enrichShopFromGraphql(unauth.admin, shop, db),
       );
     }
   } catch (err: any) {

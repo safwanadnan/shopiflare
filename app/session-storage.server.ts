@@ -1,25 +1,29 @@
 import { Session } from "@shopify/shopify-api";
 import type { SessionStorage } from "@shopify/shopify-app-session-storage";
-import type { PrismaClient } from "@prisma/client";
+import { eq, inArray, desc } from "drizzle-orm";
+import type { AppDb } from "./db.server";
+import { sessions, type SessionRecord, type InsertSessionRecord } from "./db/schema";
 
-export class PrismaSessionStorage implements SessionStorage {
-  constructor(private prisma: PrismaClient) {}
+export class DrizzleSessionStorage implements SessionStorage {
+  constructor(private db: AppDb) {}
 
   public async storeSession(session: Session): Promise<boolean> {
     const data = this.sessionToRow(session);
 
-    await this.prisma.session.upsert({
-      where: { id: session.id },
-      update: data,
-      create: data,
-    });
+    await this.db
+      .insert(sessions)
+      .values(data)
+      .onConflictDoUpdate({
+        target: sessions.id,
+        set: data,
+      });
 
     return true;
   }
 
   public async loadSession(id: string): Promise<Session | undefined> {
-    const row = await this.prisma.session.findUnique({
-      where: { id },
+    const row = await this.db.query.sessions.findFirst({
+      where: eq(sessions.id, id),
     });
 
     if (!row) {
@@ -31,7 +35,7 @@ export class PrismaSessionStorage implements SessionStorage {
 
   public async deleteSession(id: string): Promise<boolean> {
     try {
-      await this.prisma.session.delete({ where: { id } });
+      await this.db.delete(sessions).where(eq(sessions.id, id));
     } catch {
       return true;
     }
@@ -40,33 +44,34 @@ export class PrismaSessionStorage implements SessionStorage {
   }
 
   public async deleteSessions(ids: string[]): Promise<boolean> {
-    await this.prisma.session.deleteMany({ where: { id: { in: ids } } });
+    if (ids.length === 0) return true;
+    await this.db.delete(sessions).where(inArray(sessions.id, ids));
     return true;
   }
 
   public async findSessionsByShop(shop: string): Promise<Session[]> {
-    const sessions = await this.prisma.session.findMany({
-      where: { shop },
-      take: 25,
-      orderBy: [{ expires: "desc" }],
+    const rows = await this.db.query.sessions.findMany({
+      where: eq(sessions.shop, shop),
+      limit: 25,
+      orderBy: [desc(sessions.expires)],
     });
 
-    return sessions.map((session) => this.rowToSession(session));
+    return rows.map((session) => this.rowToSession(session));
   }
 
-  private sessionToRow(session: Session) {
+  private sessionToRow(session: Session): InsertSessionRecord {
     const sessionParams = session.toObject();
 
     return {
       id: session.id,
       shop: session.shop,
       state: session.state,
-      isOnline: session.isOnline,
+      isOnline: Boolean(session.isOnline),
       scope: session.scope || null,
       expires: session.expires ? new Date(session.expires) : null,
       accessToken: session.accessToken || "",
       userId: sessionParams.onlineAccessInfo?.associated_user?.id
-        ? BigInt(sessionParams.onlineAccessInfo.associated_user.id)
+        ? Number(sessionParams.onlineAccessInfo.associated_user.id)
         : null,
       firstName:
         sessionParams.onlineAccessInfo?.associated_user?.first_name || null,
@@ -74,54 +79,46 @@ export class PrismaSessionStorage implements SessionStorage {
         sessionParams.onlineAccessInfo?.associated_user?.last_name || null,
       email: sessionParams.onlineAccessInfo?.associated_user?.email || null,
       accountOwner:
-        sessionParams.onlineAccessInfo?.associated_user?.account_owner || false,
+        sessionParams.onlineAccessInfo?.associated_user?.account_owner ?? false,
       locale: sessionParams.onlineAccessInfo?.associated_user?.locale || null,
       collaborator:
-        sessionParams.onlineAccessInfo?.associated_user?.collaborator || false,
+        sessionParams.onlineAccessInfo?.associated_user?.collaborator ?? false,
       emailVerified:
-        sessionParams.onlineAccessInfo?.associated_user?.email_verified || false,
-      refreshToken: sessionParams.refreshToken || null,
+        sessionParams.onlineAccessInfo?.associated_user?.email_verified ?? false,
+      refreshToken: session.refreshToken || sessionParams.refreshToken || null,
       refreshTokenExpires: sessionParams.refreshTokenExpires
         ? new Date(sessionParams.refreshTokenExpires)
         : null,
     };
   }
 
-  private rowToSession(row: any): Session {
+  private rowToSession(row: SessionRecord): Session {
     const sessionParams: Record<string, boolean | string | number> = {
       id: row.id,
       shop: row.shop,
       state: row.state,
-      isOnline: row.isOnline,
-      userId: row.userId ? String(row.userId) : "",
+      isOnline: Boolean(row.isOnline),
+      userId: row.userId != null ? String(row.userId) : "",
       firstName: row.firstName ? String(row.firstName) : "",
       lastName: row.lastName ? String(row.lastName) : "",
       email: row.email ? String(row.email) : "",
       locale: row.locale ? String(row.locale) : "",
     };
 
-    if (row.accountOwner !== null) {
-      sessionParams.accountOwner = row.accountOwner;
+    if (row.accountOwner !== null && row.accountOwner !== undefined) {
+      sessionParams.accountOwner = Boolean(row.accountOwner);
     }
 
-    if (row.collaborator !== null) {
-      sessionParams.collaborator = row.collaborator;
+    if (row.collaborator !== null && row.collaborator !== undefined) {
+      sessionParams.collaborator = Boolean(row.collaborator);
     }
 
-    if (row.emailVerified !== null) {
-      sessionParams.emailVerified = row.emailVerified;
+    if (row.emailVerified !== null && row.emailVerified !== undefined) {
+      sessionParams.emailVerified = Boolean(row.emailVerified);
     }
 
     if (row.expires) {
       sessionParams.expires = new Date(row.expires).getTime();
-    }
-
-    if (row.scope) {
-      sessionParams.scope = row.scope;
-    }
-
-    if (row.accessToken) {
-      sessionParams.accessToken = row.accessToken;
     }
 
     if (row.refreshToken) {
@@ -134,6 +131,17 @@ export class PrismaSessionStorage implements SessionStorage {
       ).getTime();
     }
 
+    if (row.accessToken) {
+      sessionParams.accessToken = row.accessToken;
+    }
+
+    if (row.scope) {
+      sessionParams.scope = row.scope;
+    }
+
     return Session.fromPropertyArray(Object.entries(sessionParams), true);
   }
 }
+
+// Backwards-compatible alias
+export const PrismaSessionStorage = DrizzleSessionStorage;

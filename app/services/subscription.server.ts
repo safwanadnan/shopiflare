@@ -1,4 +1,7 @@
-import type { PrismaClient } from "@prisma/client";
+import { eq } from "drizzle-orm";
+import type { AppDb } from "../db.server";
+import { appSubscriptions, type AppSubscriptionRecord, type InsertAppSubscriptionRecord } from "../db/schema";
+import { resolveShop } from "./shop.server";
 import { logger } from "./logger.server";
 
 export const ACTIVE_SUBSCRIPTIONS_QUERY = `#graphql
@@ -54,286 +57,43 @@ export const APP_SUBSCRIPTION_CREATE_MUTATION = `#graphql
       test: $test
       trialDays: $trialDays
     ) {
+      userErrors {
+        field
+        message
+      }
+      confirmationUrl
       appSubscription {
         id
         name
         status
       }
-      confirmationUrl
-      userErrors {
-        field
-        message
-      }
     }
   }
 `;
 
-export const APP_SUBSCRIPTION_CANCEL_MUTATION = `#graphql
-  mutation AppSubscriptionCancel($id: ID!, $prorate: Boolean) {
-    appSubscriptionCancel(id: $id, prorate: $prorate) {
-      appSubscription {
-        id
-        status
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }
-`;
-
-export interface CreateSubscriptionOptions {
+export interface CreateSubscriptionPlanOptions {
   name: string;
   price: number;
-  interval?: "EVERY_30_DAYS" | "ANNUAL";
   returnUrl: string;
-  test?: boolean;
+  currencyCode?: string;
+  interval?: "EVERY_30_DAYS" | "ANNUAL";
   trialDays?: number;
+  test?: boolean;
 }
 
-/**
- * Synchronizes active app subscriptions from Shopify GraphQL Admin into the database.
- */
-export async function syncAppSubscriptionsFromGraphql(
-  admin: { graphql: (query: string, options?: any) => Promise<Response> },
-  shopifyDomain: string,
-  prisma: PrismaClient,
-) {
-  try {
-    const shop = await prisma.shop.findUnique({
-      where: { shopifyDomain },
-    });
-
-    if (!shop) {
-      logger.warn(`Cannot sync subscriptions because Shop record does not exist for domain ${shopifyDomain}`, {
-        shopDomain: shopifyDomain,
-      });
-      return [];
-    }
-
-    const response = await admin.graphql(ACTIVE_SUBSCRIPTIONS_QUERY);
-    const json = (await response.json()) as any;
-    const activeSubscriptions = json?.data?.appInstallation?.activeSubscriptions || [];
-
-    const syncedSubscriptions = [];
-
-    for (const sub of activeSubscriptions) {
-      let price: number | null = null;
-      let currency: string | null = null;
-      let interval: string | null = null;
-      let cappedAmount: number | null = null;
-      let terms: string | null = null;
-
-      if (Array.isArray(sub.lineItems)) {
-        for (const item of sub.lineItems) {
-          const pricing = item.plan?.pricingDetails;
-          if (pricing?.__typename === "AppRecurringPricing") {
-            price = pricing.price?.amount ? parseFloat(pricing.price.amount) : null;
-            currency = pricing.price?.currencyCode || null;
-            interval = pricing.interval || null;
-          } else if (pricing?.__typename === "AppUsagePricing") {
-            cappedAmount = pricing.cappedAmount?.amount ? parseFloat(pricing.cappedAmount.amount) : null;
-            terms = pricing.terms || null;
-          }
-        }
-      }
-
-      const subscriptionData = {
-        shopifySubscriptionId: String(sub.id),
-        adminGraphqlApiId: String(sub.id),
-        name: sub.name || null,
-        status: sub.status || "ACTIVE",
-        test: Boolean(sub.test),
-        trialDays: sub.trialDays != null ? Number(sub.trialDays) : null,
-        currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null,
-        price,
-        currency,
-        interval,
-        cappedAmount,
-        terms,
-        lineItems: sub.lineItems || null,
-        rawPayload: sub,
-        shopId: shop.id,
-        shopifyCreatedAt: sub.createdAt ? new Date(sub.createdAt) : null,
-      };
-
-      const record = await prisma.appSubscription.upsert({
-        where: { shopifySubscriptionId: String(sub.id) },
-        create: subscriptionData,
-        update: subscriptionData,
-      });
-
-      syncedSubscriptions.push(record);
-    }
-
-    // Update Shop plan details if an active subscription exists
-    if (syncedSubscriptions.length > 0) {
-      const primarySub = syncedSubscriptions[0];
-      await prisma.shop.update({
-        where: { id: shop.id },
-        data: {
-          planName: primarySub.name,
-          planDisplayName: primarySub.name,
-        },
-      });
-    }
-
-    logger.info(`Successfully synced ${syncedSubscriptions.length} active app subscription(s) from Shopify GraphQL for ${shopifyDomain}`, {
-      shopId: shop.id,
-      shopDomain: shopifyDomain,
-      count: syncedSubscriptions.length,
-    });
-    return syncedSubscriptions;
-  } catch (error: any) {
-    logger.error(`Failed to sync active app subscriptions from Shopify GraphQL for ${shopifyDomain}`, {
-      shopDomain: shopifyDomain,
-      error,
-    });
-    return [];
-  }
-}
-
-/**
- * Handles incoming app_subscriptions/update webhook payloads.
- */
-export async function processAppSubscriptionWebhook(
-  payload: Record<string, any>,
-  shopifyDomain: string,
-  prisma: PrismaClient,
-) {
-  try {
-    const sub = payload.app_subscription || payload;
-    if (!sub || typeof sub !== "object") return null;
-
-    const subId = String(sub.admin_graphql_api_id || sub.id);
-    if (!subId) {
-      logger.warn(`Received app_subscriptions/update webhook payload missing subscription ID for ${shopifyDomain}`, {
-        shopDomain: shopifyDomain,
-      });
-      return null;
-    }
-
-    // Resolve shop by domain or numeric shop id
-    const rawShopId = String(sub.admin_graphql_api_shop_id || "").replace(/^gid:\/\/shopify\/Shop\//, "");
-    const shop = await prisma.shop.findFirst({
-      where: {
-        OR: [
-          { shopifyDomain },
-          ...(rawShopId ? [{ id: rawShopId }] : []),
-        ],
-      },
-    });
-
-    if (!shop) {
-      logger.warn(`Received app_subscriptions/update webhook but no matching Shop found for domain ${shopifyDomain}`, {
-        shopId: rawShopId || null,
-        shopDomain: shopifyDomain,
-      });
-      return null;
-    }
-
-    let price: number | null = null;
-    let currency: string | null = sub.currency || null;
-    let interval: string | null = null;
-    let cappedAmount: number | null = sub.capped_amount ? parseFloat(sub.capped_amount) : null;
-    let terms: string | null = null;
-
-    if (Array.isArray(sub.line_items)) {
-      for (const item of sub.line_items) {
-        const pricing = item.plan?.pricing_details || item.plan?.pricingDetails;
-        if (pricing) {
-          if (pricing.price) {
-            price = pricing.price.amount ? parseFloat(pricing.price.amount) : null;
-            currency = pricing.price.currency_code || pricing.price.currencyCode || currency;
-          }
-          interval = pricing.interval || interval;
-          if (pricing.capped_amount) {
-            cappedAmount = parseFloat(pricing.capped_amount.amount || pricing.capped_amount);
-          }
-          terms = pricing.terms || terms;
-        }
-      }
-    }
-
-    const subscriptionData = {
-      shopifySubscriptionId: subId,
-      adminGraphqlApiId: String(sub.admin_graphql_api_id || sub.id),
-      name: sub.name || null,
-      status: sub.status || "ACTIVE",
-      test: Boolean(sub.test),
-      trialDays: sub.trial_days != null ? Number(sub.trial_days) : null,
-      currentPeriodEnd: sub.current_period_end ? new Date(sub.current_period_end) : null,
-      price,
-      currency,
-      interval,
-      cappedAmount,
-      terms,
-      lineItems: sub.line_items || null,
-      rawPayload: sub,
-      shopId: shop.id,
-      shopifyCreatedAt: sub.created_at ? new Date(sub.created_at) : null,
-      shopifyUpdatedAt: sub.updated_at ? new Date(sub.updated_at) : null,
-    };
-
-    const record = await prisma.appSubscription.upsert({
-      where: { shopifySubscriptionId: subId },
-      create: subscriptionData,
-      update: subscriptionData,
-    });
-
-    // If active, update Shop plan
-    if (sub.status === "ACTIVE" && sub.name) {
-      await prisma.shop.update({
-        where: { id: shop.id },
-        data: {
-          planName: sub.name,
-          planDisplayName: sub.name,
-        },
-      });
-    }
-
-    logger.info(`Successfully processed app_subscriptions/update webhook for subscription ${subId} (status: ${sub.status}) on ${shopifyDomain}`, {
-      shopId: shop.id,
-      shopDomain: shopifyDomain,
-      subscriptionId: subId,
-      status: sub.status,
-      planName: sub.name,
-    });
-    return record;
-  } catch (error: any) {
-    logger.error(`Failed to process app_subscriptions/update webhook for ${shopifyDomain}`, {
-      shopDomain: shopifyDomain,
-      error,
-    });
-    return null;
-  }
-}
-
-/**
- * Gets the current active AppSubscription for a shop.
- */
-export async function getActiveSubscription(
-  shopifyDomain: string,
-  prisma: PrismaClient,
-) {
-  return prisma.appSubscription.findFirst({
-    where: {
-      shop: { shopifyDomain },
-      status: "ACTIVE",
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-}
-
-/**
- * Initiates a new AppSubscription on Shopify via GraphQL Admin API.
- */
 export async function createAppSubscription(
-  admin: { graphql: (query: string, options?: any) => Promise<Response> },
-  options: CreateSubscriptionOptions,
-) {
-  const { name, price, interval = "EVERY_30_DAYS", returnUrl, test = false, trialDays = 0 } = options;
+  admin: { graphql: (query: string, options?: any) => Promise<any> },
+  options: CreateSubscriptionPlanOptions,
+): Promise<{ confirmationUrl: string | null; userErrors: any[] }> {
+  const {
+    name,
+    price,
+    returnUrl,
+    currencyCode = "USD",
+    interval = "EVERY_30_DAYS",
+    trialDays = 0,
+    test = false,
+  } = options;
 
   const response = await admin.graphql(APP_SUBSCRIPTION_CREATE_MUTATION, {
     variables: {
@@ -347,7 +107,7 @@ export async function createAppSubscription(
             appRecurringPricingDetails: {
               price: {
                 amount: price,
-                currencyCode: "USD",
+                currencyCode,
               },
               interval,
             },
@@ -357,40 +117,196 @@ export async function createAppSubscription(
     },
   });
 
-  const json = (await response.json()) as any;
-  const result = json?.data?.appSubscriptionCreate;
-
-  if (result?.userErrors && result.userErrors.length > 0) {
-    throw new Error(`[SubscriptionCreate] ${result.userErrors.map((e: any) => e.message).join(", ")}`);
-  }
+  const json = await response.json();
+  const data = json?.data?.appSubscriptionCreate;
 
   return {
-    appSubscription: result?.appSubscription,
-    confirmationUrl: result?.confirmationUrl,
+    confirmationUrl: data?.confirmationUrl || null,
+    userErrors: data?.userErrors || [],
   };
 }
 
-/**
- * Cancels an AppSubscription on Shopify via GraphQL Admin API.
- */
-export async function cancelAppSubscription(
-  admin: { graphql: (query: string, options?: any) => Promise<Response> },
-  subscriptionId: string,
-  prorate: boolean = true,
-) {
-  const response = await admin.graphql(APP_SUBSCRIPTION_CANCEL_MUTATION, {
-    variables: {
-      id: subscriptionId.startsWith("gid://") ? subscriptionId : `gid://shopify/AppSubscription/${subscriptionId}`,
-      prorate,
-    },
-  });
-
-  const json = (await response.json()) as any;
-  const result = json?.data?.appSubscriptionCancel;
-
-  if (result?.userErrors && result.userErrors.length > 0) {
-    throw new Error(`[SubscriptionCancel] ${result.userErrors.map((e: any) => e.message).join(", ")}`);
+export async function syncAppSubscriptionsFromGraphql(
+  admin: { graphql: (query: string, options?: any) => Promise<any> },
+  shopDomain: string,
+  db: AppDb,
+): Promise<AppSubscriptionRecord[]> {
+  const shopRecord = await resolveShop(db, { shopDomain });
+  if (!shopRecord) {
+    logger.warn(`Cannot sync app subscriptions: Shop ${shopDomain} does not exist in the database`, {
+      shopDomain,
+    });
+    return [];
   }
 
-  return result?.appSubscription;
+  const shopLogger = logger.withContext({ shopId: shopRecord.id, shopDomain });
+
+  try {
+    const response = await admin.graphql(ACTIVE_SUBSCRIPTIONS_QUERY);
+    const json = await response.json();
+
+    if (json.errors && json.errors.length > 0) {
+      shopLogger.error("GraphQL errors while executing AppSubscriptions query", {
+        errors: json.errors,
+      });
+      return [];
+    }
+
+    const rawSubs: any[] =
+      json?.data?.appInstallation?.activeSubscriptions || [];
+
+    const syncedSubscriptions: AppSubscriptionRecord[] = [];
+
+    for (const sub of rawSubs) {
+      const numericId = String(sub.id).replace(/\D/g, "");
+      const lineItem = sub.lineItems?.[0];
+      const pricing = lineItem?.plan?.pricingDetails;
+
+      const isRecurring = pricing?.__typename === "AppRecurringPricing";
+      const isUsage = pricing?.__typename === "AppUsagePricing";
+
+      const price = isRecurring ? parseFloat(pricing?.price?.amount) : null;
+      const currency = isRecurring ? pricing?.price?.currencyCode : null;
+      const interval = isRecurring ? pricing?.interval : null;
+      const cappedAmount = isUsage ? parseFloat(pricing?.cappedAmount?.amount) : null;
+      const terms = isUsage ? pricing?.terms : null;
+
+      const subData: InsertAppSubscriptionRecord = {
+        id: numericId,
+        shopifySubscriptionId: sub.id,
+        name: sub.name || null,
+        status: sub.status || null,
+        adminGraphqlApiId: sub.id,
+        test: Boolean(sub.test),
+        trialDays: sub.trialDays != null ? Number(sub.trialDays) : null,
+        currentPeriodEnd: sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null,
+        price,
+        currency,
+        interval,
+        cappedAmount,
+        terms,
+        lineItems: sub.lineItems ? JSON.stringify(sub.lineItems) : null,
+        rawPayload: JSON.stringify(sub),
+        shopId: shopRecord.id,
+        shopifyCreatedAt: sub.createdAt ? new Date(sub.createdAt) : null,
+        updatedAt: new Date(),
+      };
+
+      const updateSet = { ...subData };
+      delete (updateSet as any).id;
+
+      await db
+        .insert(appSubscriptions)
+        .values(subData)
+        .onConflictDoUpdate({
+          target: appSubscriptions.shopifySubscriptionId,
+          set: updateSet,
+        });
+
+      const savedSub = await db.query.appSubscriptions.findFirst({
+        where: eq(appSubscriptions.shopifySubscriptionId, sub.id),
+      });
+
+      if (savedSub) syncedSubscriptions.push(savedSub);
+    }
+
+    shopLogger.info(
+      `Successfully synced ${syncedSubscriptions.length} active app subscription(s) from Shopify GraphQL for ${shopDomain}`,
+      { shopDomain, activeCount: syncedSubscriptions.length },
+    );
+
+    return syncedSubscriptions;
+  } catch (error: any) {
+    shopLogger.error(`Exception occurred during app subscription sync for ${shopDomain}`, {
+      error,
+    });
+    return [];
+  }
+}
+
+export async function processAppSubscriptionWebhook(
+  payload: any,
+  shopDomain: string,
+  db: AppDb,
+): Promise<AppSubscriptionRecord | null> {
+  const shopRecord = await resolveShop(db, { shopDomain });
+  if (!shopRecord) {
+    logger.warn(`Received app_subscriptions/update webhook but shop ${shopDomain} is not found in database`, {
+      shopDomain,
+    });
+    return null;
+  }
+
+  const shopLogger = logger.withContext({ shopId: shopRecord.id, shopDomain });
+
+  try {
+    const rawSub = payload?.app_subscription;
+    if (!rawSub || !rawSub.admin_graphql_api_id) {
+      shopLogger.warn("Subscription webhook payload missing admin_graphql_api_id", { payload });
+      return null;
+    }
+
+    const numericId = String(rawSub.admin_graphql_api_id).replace(/\D/g, "");
+    const lineItem = rawSub.line_items?.[0];
+    const plan = lineItem?.plan;
+    const pricing = plan?.pricing_details;
+
+    const subData: InsertAppSubscriptionRecord = {
+      id: numericId,
+      shopifySubscriptionId: rawSub.admin_graphql_api_id,
+      name: rawSub.name || null,
+      status: rawSub.status || null,
+      adminGraphqlApiId: rawSub.admin_graphql_api_id,
+      test: Boolean(rawSub.test),
+      trialDays: rawSub.trial_days != null ? Number(rawSub.trial_days) : null,
+      currentPeriodEnd: rawSub.current_period_end ? new Date(rawSub.current_period_end) : null,
+      price: pricing?.price ? parseFloat(pricing.price) : null,
+      currency: pricing?.currency_code || null,
+      interval: pricing?.interval || null,
+      cappedAmount: pricing?.capped_amount ? parseFloat(pricing.capped_amount) : null,
+      terms: pricing?.terms || null,
+      lineItems: rawSub.line_items ? JSON.stringify(rawSub.line_items) : null,
+      rawPayload: JSON.stringify(payload),
+      shopId: shopRecord.id,
+      shopifyCreatedAt: rawSub.created_at ? new Date(rawSub.created_at) : null,
+      shopifyUpdatedAt: rawSub.updated_at ? new Date(rawSub.updated_at) : null,
+      updatedAt: new Date(),
+    };
+
+    const updateSet = { ...subData };
+    delete (updateSet as any).id;
+
+    await db
+      .insert(appSubscriptions)
+      .values(subData)
+      .onConflictDoUpdate({
+        target: appSubscriptions.shopifySubscriptionId,
+        set: updateSet,
+      });
+
+    const savedSub = await db.query.appSubscriptions.findFirst({
+      where: eq(appSubscriptions.shopifySubscriptionId, rawSub.admin_graphql_api_id),
+    });
+
+    shopLogger.info(`Successfully updated app subscription status to '${rawSub.status}' via webhook`, {
+      subscriptionId: rawSub.admin_graphql_api_id,
+      status: rawSub.status,
+    });
+
+    return savedSub || null;
+  } catch (error: any) {
+    shopLogger.error(`Exception occurred during subscription webhook processing for ${shopDomain}`, {
+      error,
+    });
+    return null;
+  }
+}
+
+export async function getActiveAppSubscriptions(
+  shopId: string,
+  db: AppDb,
+): Promise<AppSubscriptionRecord[]> {
+  return db.query.appSubscriptions.findMany({
+    where: eq(appSubscriptions.shopId, shopId),
+  });
 }

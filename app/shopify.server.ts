@@ -4,8 +4,8 @@ import {
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
-import { PrismaSessionStorage } from "./session-storage.server";
-import { getPrisma } from "./db.server";
+import { DrizzleSessionStorage } from "./session-storage.server";
+import { getDb } from "./db.server";
 import { enrichShopFromGraphql } from "./services/shop.server";
 import { syncAppSubscriptionsFromGraphql } from "./services/subscription.server";
 import { logger } from "./services/logger.server";
@@ -23,7 +23,7 @@ export function getShopify(env: Env) {
     );
   }
 
-  const prisma = getPrisma(env);
+  const db = getDb(env);
   cachedApp = shopifyApp({
     apiKey: env.SHOPIFY_API_KEY,
     apiSecretKey: env.SHOPIFY_API_SECRET,
@@ -31,7 +31,7 @@ export function getShopify(env: Env) {
     scopes: env.SCOPES?.split(",") || ["write_products"],
     appUrl: env.SHOPIFY_APP_URL || "https://shopiflare.<your-account>.workers.dev",
     authPathPrefix: "/auth",
-    sessionStorage: new PrismaSessionStorage(prisma),
+    sessionStorage: new DrizzleSessionStorage(db),
     distribution: AppDistribution.AppStore,
     future: {
       expiringOfflineAccessTokens: true,
@@ -39,11 +39,11 @@ export function getShopify(env: Env) {
     hooks: {
       afterAuth: async ({ session, admin }) => {
         try {
-          await enrichShopFromGraphql(admin, session.shop, prisma, {
+          await enrichShopFromGraphql(admin, session.shop, db, {
             accessToken: session.accessToken,
             scope: session.scope,
           });
-          await syncAppSubscriptionsFromGraphql(admin, session.shop, prisma);
+          await syncAppSubscriptionsFromGraphql(admin, session.shop, db);
         } catch (error: any) {
           logger.error(`Failed afterAuth hook background sync for ${session.shop}`, {
             shopDomain: session.shop,

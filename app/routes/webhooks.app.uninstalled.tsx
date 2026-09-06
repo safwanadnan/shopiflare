@@ -1,6 +1,8 @@
 import type { ActionFunctionArgs } from "react-router";
+import { eq } from "drizzle-orm";
 import { getShopify } from "../shopify.server";
-import { getPrisma } from "../db.server";
+import { getDb } from "../db.server";
+import { shops } from "../db/schema";
 import { resolveShop } from "../services/shop.server";
 import { logger } from "../services/logger.server";
 
@@ -8,9 +10,9 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
   const env = context.cloudflare.env;
   const shopify = getShopify(env);
   const { shop, session, topic } = await shopify.authenticate.webhook(request);
-  const prisma = getPrisma(env);
+  const db = getDb(env);
 
-  const shopRecord = await resolveShop(prisma, { shopDomain: shop });
+  const shopRecord = await resolveShop(db, { shopDomain: shop });
   const shopLogger = logger.withContext({
     shopId: shopRecord?.id ?? null,
     shopDomain: shop,
@@ -21,11 +23,10 @@ export const action = async ({ request, context }: ActionFunctionArgs) => {
     await shopify.sessionStorage.deleteSessions([session.id]);
   }
 
-  await prisma.shop
-    .update({
-      where: { shopifyDomain: shop },
-      data: { uninstalledAt: new Date() },
-    })
+  await db
+    .update(shops)
+    .set({ uninstalledAt: new Date(), updatedAt: new Date() })
+    .where(eq(shops.shopifyDomain, shop))
     .catch(() => {});
 
   shopLogger.info(`Successfully processed app/uninstalled webhook for ${shop}, deleted active sessions and marked store uninstalled`, {

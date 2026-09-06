@@ -1,7 +1,7 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopify } from "../shopify.server";
-import { getPrisma } from "../db.server";
+import { getDb } from "../db.server";
 import { enrichShopFromGraphql } from "../services/shop.server";
 import { logger } from "../services/logger.server";
 
@@ -9,10 +9,10 @@ export const loader = async ({ request, context }: LoaderFunctionArgs) => {
   const env = context.cloudflare.env;
   const shopify = getShopify(env);
   const { session, admin } = await shopify.authenticate.admin(request);
-  const prisma = getPrisma(env);
+  const db = getDb(env);
 
   try {
-    await enrichShopFromGraphql(admin, session.shop, prisma, {
+    await enrichShopFromGraphql(admin, session.shop, db, {
       accessToken: session.accessToken,
       scope: session.scope,
     });

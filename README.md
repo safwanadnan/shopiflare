@@ -1,100 +1,67 @@
-# 🛍️⚡ Shopiflare
+# Shopiflare ⚡
 
-**The production-grade Shopify App template built on React Router 7 and Cloudflare Workers, powered by Prisma ORM and Cloudflare D1 SQL.**
+> **A production-ready, ultra-fast Shopify App Boilerplate running natively on Cloudflare Workers, Cloudflare D1 (Serverless SQLite), and Drizzle ORM.**
 
----
-
-## 📖 Overview
-
-**Shopiflare** is a modern, high-performance foundation for building full-stack Shopify Apps deployed directly to [Cloudflare Workers](https://workers.cloudflare.com/). 
-
-Traditional serverless Node.js Shopify apps often suffer from cold-start latencies and high container hosting costs. Meanwhile, previous Edge templates suffered from Key-Value (KV) eventual-consistency race conditions, request context bleeding (`globalThis`), and native Rust query engine binary incompatibilities.
-
-Shopiflare solves all of these challenges:
-* ⚡ **Ultra-Fast Global Edge Execution**: Sub-10ms response times worldwide via Cloudflare Workers V8 isolates.
-* 🗄️ **Relational SQL via Cloudflare D1 & Prisma**: Read-your-writes consistency with Cloudflare D1 SQLite databases using Prisma ORM compiled with pure **WebAssembly (WASM)**.
-* 🛡️ **Zero Request Bleeding**: Context-isolated Shopify instances injected per request via React Router `AppLoadContext` (no unsafe global state mutations).
-* 🏬 **Automatic Store Sync & Enrichment**: Automatically queries and persists store metadata (plan, timezone, email, currency, raw GraphQL snapshot) into a dedicated `Shop` SQL table upon OAuth install and via `shop/update` webhooks.
-* 💳 **App Monetization & Subscriptions**: Out-of-the-box billing engine supporting recurring application charges, usage pricing, plan syncing, and webhook tracking (`AppSubscription`).
-* 🔒 **Mandatory GDPR & Compliance Suite**: Built-in endpoints and database logging for Shopify's required compliance webhooks (`customers/data_request`, `customers/redact`, `shop/redact`).
-* 🪵 **Centralized Structured Logging**: Cloudflare Workers-optimized JSON logger with context injection (`shopId`, `shopDomain`, `topic`), safe error serialization, and zero-loss log sampling.
-* 🌐 **Multi-Environment Ready**: Out-of-the-box configuration and scripts for **Local**, **Staging**, and **Production** environments across both Cloudflare and Shopify Partner Dashboards.
+Shopiflare combines **React Router v7**, the official **`@shopify/shopify-app-react-router`** SDK, **Cloudflare Workers**, **Cloudflare D1**, and **Drizzle ORM** to deliver a blazing-fast, serverless Shopify application with zero WebAssembly engine overhead and true global edge latency.
 
 ---
 
-## 🏗️ Architecture
+## ⚡ Why Drizzle ORM on Cloudflare D1?
 
-```mermaid
-graph TD
-    Shopify[Shopify Admin / Embedded App] -->|HTTPS Requests| CF[Cloudflare Workers Edge]
-    subgraph "Shopiflare (Cloudflare Worker)"
-        CF --> Router[React Router 7 SSR]
-        Router --> Auth[Shopify Server Auth Adapter]
-        Router --> Services[Core Services: Logger, Shop, Subscription]
-        Auth --> SessionStore[Prisma Session Storage Adapter]
-        SessionStore --> PrismaWASM[Prisma Client WASM Engine]
-        PrismaWASM --> Adapter[Prisma D1 Driver Adapter]
-    end
-    Adapter --> D1[(Cloudflare D1 SQL Database)]
-```
+Traditional Prisma setups on Cloudflare Workers rely on a large WebAssembly (WASM) query engine file and synthetic filesystem shims, resulting in:
+- High bundle sizes and memory footprint.
+- Cold-start latency spikes due to WASM compilation.
+- Vulnerabilities during offline access token renewal and datetime conversions.
 
-* **Frontend**: React 18, React Router 7, Shopify App Bridge React.
-* **Edge Runtime**: Cloudflare Workers with `@cloudflare/vite-plugin`.
-* **Database & ORM**: Cloudflare D1 SQLite + Prisma ORM (WASM Query Engine + `@prisma/adapter-d1`).
-* **Session Persistence**: Custom `PrismaSessionStorage` implementing Shopify's official `SessionStorage` interface with typed serialization.
-* **Observability**: Centralized structured logging with Cloudflare Workers native log sampling and error formatting.
+**Shopiflare solves this by migrating to Drizzle ORM (`drizzle-orm/d1`):**
+- **Zero WASM Overhead:** Pure TypeScript/JavaScript SQL query builder compiled directly for the Cloudflare V8 runtime.
+- **Sub-10ms Edge Cold Starts:** Native Cloudflare D1 binding (`env.DB`) communicates directly with edge SQLite.
+- **Strict Type Safety:** Relational queries and typed schema definitions with automatic migration generation via `drizzle-kit`.
+- **Bulletproof Session Storage:** Full implementation of Shopify's `SessionStorage` interface supporting expiring offline access tokens and `refreshToken` rotation.
 
 ---
 
-## 📂 Project Structure
+## 🏗️ Architecture & Project Structure
 
 ```
+shopiflare/
 ├── app/
-│   ├── routes/                     # React Router file-based routes
-│   │   ├── _index/                 # Landing / Login route
-│   │   ├── app._index.tsx          # Main Embedded Admin Dashboard
-│   │   ├── app.tsx                 # App Home shell with background sync
-│   │   ├── auth.$.tsx              # Shopify OAuth & Store Metadata Auto-Sync
-│   │   ├── auth.login/             # Merchant Login Form
-│   │   ├── webhooks.app.uninstalled.tsx          # App uninstalled lifecycle handler
-│   │   ├── webhooks.app.scopes_update.tsx        # Scope update handler
-│   │   ├── webhooks.shop.update.tsx              # Shop data changes handler
-│   │   ├── webhooks.app_subscriptions.update.tsx # Billing & subscription update handler
-│   │   ├── webhooks.compliance.tsx               # Shared GDPR compliance handler
-│   │   ├── webhooks.customers.data_request.tsx   # Mandatory GDPR data request endpoint
-│   │   ├── webhooks.customers.redact.tsx         # Mandatory GDPR customer redact endpoint
-│   │   └── webhooks.shop.redact.tsx              # Mandatory GDPR shop redact endpoint
-│   ├── services/                   # Core business logic services
-│   │   ├── logger.server.ts        # Centralized structured logger
-│   │   ├── shop.server.ts          # Shop enrichment, GraphQL queries, and shop resolution
-│   │   └── subscription.server.ts  # Billing API, subscription mutations, and plan sync
-│   ├── db.server.ts                # Per-request Prisma Client factory (D1 adapter)
-│   ├── session-storage.server.ts   # Custom Prisma D1 Session Storage implementation
-│   ├── shopify.server.ts           # Dynamic Shopify App API instance factory & afterAuth hooks
-│   ├── root.tsx                    # Root Layout & App Bridge Provider
-│   ├── entry.server.tsx            # React Router SSR Entrypoint with structured error handling
-│   └── globals.d.ts                # Global styles and Polaris Web Component JSX typings
-├── migrations/                     # Raw D1 SQL migrations (0001_init.sql)
-├── prisma/
-│   └── schema.prisma               # Prisma Schema (Session, Shop, AppSubscription, ShopifyGdprRequest)
-├── scripts/
-│   └── sync-prisma-types.js        # Synchronizes generated Prisma types to @prisma/client
+│   ├── db/
+│   │   └── schema.ts               # Drizzle ORM SQLite schema (Session, Shop, Subscriptions, GDPR)
+│   ├── routes/
+│   │   ├── _index/                 # Public landing page with merchant login form
+│   │   ├── app.tsx                 # Embedded Shopify admin layout with App Bridge navigation
+│   │   ├── app._index.tsx          # Embedded app dashboard with Polaris Web Components
+│   │   ├── app.additional.tsx      # Sub-page navigation example
+│   │   ├── auth.$.tsx              # OAuth callback & background store profile enrichment
+│   │   ├── auth.login/             # Merchant login route
+│   │   └── webhooks.*              # Real-time Shopify Webhook handlers (GDPR, app, subscriptions, shop)
+│   ├── services/
+│   │   ├── logger.server.ts        # Centralized structured JSON logger with context bindings
+│   │   ├── shop.server.ts          # GraphQL store enrichment (40+ fields) and upsert routines
+│   │   └── subscription.server.ts  # Recurring billing GraphQL queries, plans & webhook sync
+│   ├── db.server.ts                # D1 Drizzle database client initialization (env.DB)
+│   ├── session-storage.server.ts   # Custom DrizzleSessionStorage with token refresh logic
+│   └── shopify.server.ts           # Shopify API configuration, hooks & auth lifecycle
+├── migrations/
+│   └── 0001_init.sql               # Production-ready SQLite SQL migration for Cloudflare D1
 ├── workers/
-│   └── app.ts                      # Cloudflare Worker entrypoint & Context forwarder
+│   └── app.ts                      # Cloudflare Worker entrypoint forwarding env and ExecutionContext
+├── drizzle.config.ts               # Drizzle Kit configuration for migrations and schema inspection
 ├── shopify.app.dev.toml            # Shopify CLI configuration for Local Development
 ├── shopify.app.staging.toml        # Shopify CLI configuration for Staging
 ├── shopify.app.toml                # Shopify CLI configuration for Production
 ├── wrangler.jsonc                  # Cloudflare Worker, D1 & Observability config
-└── vite.config.ts                  # Vite config with Prisma WASM aliases & SSR bundling
+└── vite.config.ts                  # Vite config with Cloudflare SSR plugin & zero-WASM bundling
 ```
 
 ---
 
-## 🌍 Multi-Environment Topology
+## 🌐 Multi-Environment Topology
 
 | Environment | Cloudflare Worker | D1 Database | Shopify App Config | Git Branch |
 |---|---|---|---|---|
-| **Local** | `wrangler dev` (Vite Plugin) | Local D1 Emulation (`.wrangler/state`) | `shopify.app.dev.toml` | Working Branch (`feature/*`) |
+| **Local** | `wrangler dev` (via Vite Plugin) | Local D1 Emulation (`.wrangler/state`) | `shopify.app.dev.toml` | Working Branch (`feature/*`) |
 | **Staging** | `shopiflare-staging` | `shopify-app-db-staging` | `shopify.app.staging.toml` | `staging` |
 | **Production** | `shopiflare` | `shopify-app-db-prod` | `shopify.app.toml` | `main` |
 
@@ -103,23 +70,62 @@ graph TD
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
-Ensure you have the following installed:
-* [Node.js](https://nodejs.org/) (>= 20.19 or >= 22.12)
-* [Shopify CLI](https://shopify.dev/docs/apps/tools/cli): `npm install -g @shopify/cli`
-* [Cloudflare Wrangler](https://developers.cloudflare.com/workers/wrangler/): `npm install -g wrangler`
-* *(Optional)* [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/): For exposing your local server to Shopify OAuth.
+Ensure you have the following installed on your development machine:
+* **Node.js** (>= 20.19 or >= 22.12)
+* **Shopify CLI**: `npm install -g @shopify/cli`
+* **Cloudflare Wrangler**: `npm install -g wrangler`
+* *(Optional)* **cloudflared**: For exposing your local port to Shopify OAuth (`cloudflared tunnel`).
 
 ### 2. Installation
 Clone the repository and install dependencies:
 ```bash
+git clone https://github.com/safwanadnan/shopiflare.git
+cd shopiflare
 npm install
 ```
 
-### 3. Generate Prisma Client & Sync Types
-Generate the WebAssembly-enabled Prisma client and synchronize types:
+---
+
+## 🗄️ Database Setup & Migrations with Drizzle
+
+### 1. Create Cloudflare D1 Databases
+If setting up new Cloudflare D1 databases for your app:
 ```bash
-npm run db:generate
+# Create Production Database
+npx wrangler d1 create shopify-app-db-prod
+
+# Create Staging Database
+npx wrangler d1 create shopify-app-db-staging
 ```
+*Copy the generated `database_id` values into the corresponding blocks in [`wrangler.jsonc`](./wrangler.jsonc).*
+
+### 2. Apply Initial Migrations
+Shopiflare includes the initial SQL migration in `migrations/0001_init.sql`. Apply it to your target database:
+
+```bash
+# Apply to Local D1 database (used by local dev server)
+npm run db:migrate:local
+
+# Apply to Remote Staging D1 database
+npm run db:migrate:staging
+
+# Apply to Remote Production D1 database
+npm run db:migrate:production
+```
+
+### 3. Modifying the Schema with Drizzle Kit
+When you add or update models in `app/db/schema.ts`:
+1. Generate a new SQL migration file automatically:
+   ```bash
+   npm run db:generate
+   ```
+   *Drizzle Kit will inspect `app/db/schema.ts` and create the next numbered SQL migration in `migrations/`.*
+2. Apply the migration to your desired environment:
+   ```bash
+   npm run db:migrate:local       # Local
+   npm run db:migrate:staging     # Staging
+   npm run db:migrate:production  # Production
+   ```
 
 ---
 
@@ -150,44 +156,38 @@ npx wrangler secret put SHOPIFY_API_SECRET --env production
 
 ---
 
-## 🗄️ Database Setup & Migrations
+## 🔑 Session Storage & Expiring Access Tokens
 
-### 1. Create Cloudflare D1 Databases
-If setting up new databases:
-```bash
-# Create Production Database
-npx wrangler d1 create shopify-app-db-prod
+Shopiflare implements modern Shopify security best practices with `expiringOfflineAccessTokens: true` in `app/shopify.server.ts`.
 
-# Create Staging Database
-npx wrangler d1 create shopify-app-db-staging
-```
-*Paste the generated `database_id` values into the corresponding blocks in [`wrangler.jsonc`](/wrangler.jsonc).*
+- When an offline token is issued by Shopify, it includes an expiry timestamp and a **90-day `refreshToken`**.
+- In `app/session-storage.server.ts`, `DrizzleSessionStorage` stores `refreshToken` and `refreshTokenExpires` in Cloudflare D1.
+- Upon session retrieval via `loadSession(id)`, the `refreshToken` is restored onto the Shopify `Session` instance.
+- If the offline access token has reached its expiry, Shopify's SDK automatically exchanges the `refreshToken` for a fresh access token seamlessly in the background without merchant re-authentication or 500 errors.
 
-### 2. Apply Database Migrations
-Shopiflare includes the SQL migrations under `migrations/0001_init.sql`.
+---
 
-```bash
-# Apply to Local D1 database
-npm run db:migrate:local
+## 🔄 Self-Healing & Throttled Subscription Syncing
 
-# Apply to Remote Staging D1 database
-npm run db:migrate:staging
-
-# Apply to Remote Production D1 database
-npm run db:migrate:production
-```
-
-### 3. Modifying the Schema
-When adding new models to `prisma/schema.prisma`:
-1. Generate the SQL migration diff:
-   ```bash
-   npx prisma migrate diff --from-empty --to-schema-datamodel ./prisma/schema.prisma --script --output migrations/0002_new_feature.sql
+1. **Self-Healing on Install / Initial Access**:
+   Inside `app/routes/app.tsx`, `context.cloudflare.ctx.waitUntil` executes a background check:
+   ```ts
+   const shop = await db.query.shops.findFirst({
+     where: eq(shops.shopifyDomain, session.shop),
+     columns: { rawShopData: true },
+   });
+   if (!shop || !shop.rawShopData) {
+     await enrichShopFromGraphql(admin, session.shop, db, {
+       accessToken: session.accessToken,
+       scope: session.scope,
+     });
+     await syncAppSubscriptionsFromGraphql(admin, session.shop, db);
+   }
    ```
-2. Re-generate the Prisma client and synchronize types:
-   ```bash
-   npm run db:generate
-   ```
-3. Apply to your environments (`local`, `staging`, `production`).
+2. **Preventing Redundant Page Load Syncs**:
+   The GraphQL subscription sync is guarded **inside** the `if (!shop || !shop.rawShopData)` check. Routine page loads and tab navigations will **never** trigger unnecessary GraphQL requests or spam worker logs.
+3. **Real-time Webhook Synchronization**:
+   When a merchant updates, cancels, or changes their billing plan, Shopify triggers the `app_subscriptions/update` webhook. Shopiflare automatically processes this in `app/routes/webhooks.app_subscriptions.update.tsx` and updates Cloudflare D1 in real-time.
 
 ---
 
@@ -195,7 +195,7 @@ When adding new models to `prisma/schema.prisma`:
 
 Shopiflare includes a production-ready billing service (`app/services/subscription.server.ts`):
 
-- **Query Active Subscriptions**: Synchronizes current plans directly from Shopify GraphQL Admin into `AppSubscription` table.
+- **Query Active Subscriptions**: Synchronizes current plans directly from Shopify GraphQL Admin into the `AppSubscription` D1 table.
 - **Create Recurring Subscription**:
   ```ts
   import { createAppSubscription } from "~/services/subscription.server";
@@ -208,7 +208,7 @@ Shopiflare includes a production-ready billing service (`app/services/subscripti
   });
   // Redirect merchant to confirmationUrl
   ```
-- **Webhooks Handling**: Listens to `app_subscriptions/update` to automatically record subscription state changes (ACTIVE, CANCELLED, FROZEN, etc.) without polling.
+- **Webhooks Handling**: Listens to `app_subscriptions/update` to automatically record subscription state changes (`ACTIVE`, `CANCELLED`, `FROZEN`, etc.) without polling.
 
 ---
 
@@ -219,7 +219,7 @@ Shopify requires all public apps to implement mandatory GDPR compliance endpoint
 - `webhooks.customers.redact.tsx`
 - `webhooks.shop.redact.tsx`
 
-Shopiflare routes all compliance webhooks through `webhooks.compliance.tsx`, which validates HMAC signatures via `@shopify/shopify-app-react-router` and securely records requests in the `ShopifyGdprRequest` database table for audit compliance.
+Shopiflare routes all compliance webhooks through `webhooks.compliance.tsx`, which validates HMAC signatures via `@shopify/shopify-app-react-router` and securely records requests in the `ShopifyGdprRequest` D1 table for audit compliance.
 
 ---
 
@@ -243,7 +243,7 @@ shopLogger.error("Failed to process order", { error: err });
 
 ## 💻 Local Development Workflow
 
-Because Cloudflare Workers Vite plugin simulates D1 and Worker bindings directly inside Vite, you can run the full app locally:
+Because the Cloudflare Workers Vite plugin simulates D1 and Worker bindings directly inside Vite, you can run the full app locally:
 
 1. **Start the local Dev Server**:
    ```bash
@@ -294,18 +294,18 @@ npm run deploy:shopify:production
 
 ---
 
-## ⚙️ Available Scripts
+## 📋 Available Scripts
 
 | Script | Description |
 |---|---|
 | `npm run dev:cf` | Starts the local React Router dev server with Cloudflare Workers emulation |
-| `npm run build` | Builds the client and server bundles using Vite SSR |
-| `npm run deploy:staging` | Builds and deploys the worker to the **Staging** environment |
-| `npm run deploy:production` | Builds and deploys the worker to the **Production** environment |
-| `npm run db:generate` | Generates the WebAssembly Prisma client and syncs types to `@prisma/client` |
+| `npm run build` | Builds the client and server bundles using Vite SSR (Zero-WASM) |
+| `npm run deploy:staging` | Builds and deploys the worker to the **Staging** Cloudflare environment |
+| `npm run deploy:production` | Builds and deploys the worker to the **Production** Cloudflare environment |
+| `npm run db:generate` | Generates new SQL migrations from `app/db/schema.ts` using Drizzle Kit |
 | `npm run db:migrate:local` | Applies SQL migrations to the local D1 database |
 | `npm run db:migrate:staging` | Applies SQL migrations to remote staging D1 database |
-| `npm run db:migrate:production`| Applies SQL migrations to remote production D1 database |
+| `npm run db:migrate:production` | Applies SQL migrations to remote production D1 database |
 | `npm run deploy:shopify:staging` | Pushes staging app scopes, webhooks, and URLs to Shopify |
 | `npm run deploy:shopify:production` | Pushes production app scopes, webhooks, and URLs to Shopify |
 | `npm run typecheck` | Runs TypeScript typechecker and React Router typegen |
