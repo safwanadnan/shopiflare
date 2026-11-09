@@ -1,41 +1,25 @@
 import type { ActionFunctionArgs } from "react-router";
-import { getShopify } from "../shopify.server";
 import { getDb } from "../db.server";
 import { shopifyGdprRequests } from "../db/schema";
-import { resolveShop } from "../services/shop.server";
-import { logger } from "../services/logger.server";
+import { verifyShopifyWebhook } from "../services/shopify-webhook-auth.server";
+
+const complianceTopics = ["customers/data_request", "customers/redact", "shop/redact"];
 
 export const action = async ({ request, context }: ActionFunctionArgs) => {
   const env = context.cloudflare.env;
-  const shopify = getShopify(env);
-  const { topic, shop, payload } = await shopify.authenticate.webhook(request);
-
-  const db = getDb(env);
-  const existingShop = await resolveShop(db, { shopDomain: shop });
-  const shopLogger = logger.withContext({
-    shopId: existingShop?.id ?? null,
-    shopDomain: shop,
-    topic,
-  });
-
-  try {
-    const id = crypto.randomUUID();
-    await db.insert(shopifyGdprRequests).values({
-      id,
-      shopId: existingShop?.id ?? null,
-      shopDomain: shop,
-      topic,
-      payload: payload ? JSON.stringify(payload) : null,
-    });
-
-    shopLogger.info(`Successfully recorded GDPR compliance request for topic ${topic} on ${shop}`, {
-      gdprRequestId: id,
-    });
-  } catch (err: any) {
-    shopLogger.error(`Failed to record GDPR compliance request for topic ${topic} on ${shop}`, {
-      error: err,
-    });
+  const { topic, shop, payload } = await verifyShopifyWebhook(request, env, complianceTopics);
+  const deliveryId = request.headers.get("x-shopify-event-id") || request.headers.get("x-shopify-webhook-id");
+  if (!deliveryId || !/^[a-z0-9-]{1,128}$/i.test(deliveryId)) {
+    return new Response("Missing or invalid webhook ID", { status: 400 });
   }
 
-  return new Response();
+  // Keep the intake independent of the Shop row, which may already be gone.
+  await getDb(env).insert(shopifyGdprRequests).values({
+    id: [shop, topic, deliveryId].join(":"),
+    shopDomain: shop,
+    topic,
+    payload: JSON.stringify(payload),
+  }).onConflictDoNothing({ target: shopifyGdprRequests.id });
+
+  return new Response(null, { status: 204 });
 };

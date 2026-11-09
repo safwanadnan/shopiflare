@@ -4,4 +4,5 @@ export default defineConfig({
   schema: "./app/db/schema.ts",
   out: "./migrations",
   dialect: "sqlite",
+  migrations: { prefix: "timestamp" },
 });

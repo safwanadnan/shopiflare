@@ -11,8 +11,3 @@ export function getDb(env: Env) {
 }
 
 export type AppDb = ReturnType<typeof getDb>;
-
-// Backwards-compatibility alias with helpful deprecation guidance
-export function getPrisma(env: Env): AppDb {
-  return getDb(env);
-}

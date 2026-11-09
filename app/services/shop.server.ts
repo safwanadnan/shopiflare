@@ -63,7 +63,6 @@ export const SHOP_ENRICHMENT_QUERY = `#graphql
 `;
 
 export interface AuthSessionCredentials {
-  accessToken?: string;
   scope?: string;
 }
 
@@ -101,14 +100,14 @@ export async function enrichShopFromGraphql(
 
     if (json.errors && json.errors.length > 0) {
       shopLogger.error("GraphQL errors while executing ShopEnrichment query", {
-        errors: json.errors,
+        errorCount: json.errors.length,
       });
       return null;
     }
 
     const rawShop = json?.data?.shop;
     if (!rawShop || !rawShop.id) {
-      shopLogger.warn("ShopEnrichment returned empty or malformed shop data payload", { rawShop });
+      shopLogger.warn("ShopEnrichment returned empty or malformed shop data payload");
       return null;
     }
 
@@ -161,8 +160,7 @@ export async function enrichShopFromGraphql(
         : null,
       currencyFormats: rawShop.currencyFormats ? JSON.stringify(rawShop.currencyFormats) : null,
 
-      accessToken: authCredentials?.accessToken || null,
-      scope: authCredentials?.scope || null,
+      ...(authCredentials ? { scope: authCredentials.scope ?? null } : {}),
       uninstalledAt: null,
 
       rawShopData: JSON.stringify(rawShop),
@@ -210,7 +208,7 @@ export async function enrichShopFromWebhookPayload(
   const shopLogger = logger.withContext({ shopDomain });
   try {
     if (!payload || !payload.id) {
-      shopLogger.warn("Shop webhook payload does not contain a valid ID", { payload });
+      shopLogger.warn("Shop webhook payload does not contain a valid ID");
       return null;
     }
 
@@ -258,7 +256,6 @@ export async function enrichShopFromWebhookPayload(
         ? JSON.stringify(payload.enabled_presentment_currencies)
         : null,
 
-      uninstalledAt: null,
       rawShopData: JSON.stringify(payload),
 
       shopifyCreatedAt: payload.created_at ? new Date(payload.created_at) : null,

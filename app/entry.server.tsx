@@ -12,10 +12,9 @@ export default async function handleRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   reactRouterContext: EntryContext,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _loadContext?: AppLoadContext,
+  loadContext: AppLoadContext,
 ) {
-  addDocumentResponseHeaders(request, responseHeaders);
+  addDocumentResponseHeaders(request, responseHeaders, loadContext.cloudflare.env);
   const userAgent = request.headers.get("user-agent");
 
   const body = await renderToReadableStream(

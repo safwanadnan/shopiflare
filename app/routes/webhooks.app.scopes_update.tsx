@@ -1,31 +1,17 @@
 import type { ActionFunctionArgs } from "react-router";
-import { getShopify } from "../shopify.server";
-import { getPrisma } from "../db.server";
-import { resolveShop } from "../services/shop.server";
-import { logger } from "../services/logger.server";
+import { eq } from "drizzle-orm";
+import { getDb } from "../db.server";
+import { sessions } from "../db/schema";
+import { verifyShopifyWebhook } from "../services/shopify-webhook-auth.server";
 
 export const action = async ({ request, context }: ActionFunctionArgs) => {
   const env = context.cloudflare.env;
-  const shopify = getShopify(env);
-  const { payload, session, topic, shop } = await shopify.authenticate.webhook(request);
-  const prisma = getPrisma(env);
-
-  const shopRecord = await resolveShop(prisma, { shopDomain: shop });
-  const shopLogger = logger.withContext({
-    shopId: shopRecord?.id ?? null,
-    shopDomain: shop,
-    topic,
-  });
-
-  const current = payload.current as string[];
-  if (session) {
-    session.scope = current.toString();
-    await shopify.sessionStorage.storeSession(session);
+  const { payload, shop } = await verifyShopifyWebhook(request, env, ["app/scopes_update"]);
+  const current = payload.current;
+  if (!Array.isArray(current) || !current.every(scope => typeof scope === "string")) {
+    return new Response("Invalid scopes", { status: 400 });
   }
-
-  shopLogger.info(`Successfully processed app/scopes_update webhook for ${shop}`, {
-    scopes: current,
-  });
-
-  return new Response();
+  // Update only scope; a concurrent token refresh must retain its new credentials.
+  await getDb(env).update(sessions).set({ scope: current.join(",") }).where(eq(sessions.shop, shop));
+  return new Response(null, { status: 204 });
 };

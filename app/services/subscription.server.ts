@@ -147,7 +147,7 @@ export async function syncAppSubscriptionsFromGraphql(
 
     if (json.errors && json.errors.length > 0) {
       shopLogger.error("GraphQL errors while executing AppSubscriptions query", {
-        errors: json.errors,
+        errorCount: json.errors.length,
       });
       return [];
     }
@@ -242,7 +242,7 @@ export async function processAppSubscriptionWebhook(
   try {
     const rawSub = payload?.app_subscription;
     if (!rawSub || !rawSub.admin_graphql_api_id) {
-      shopLogger.warn("Subscription webhook payload missing admin_graphql_api_id", { payload });
+      shopLogger.warn("Subscription webhook payload missing admin_graphql_api_id");
       return null;
     }
 

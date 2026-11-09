@@ -29,9 +29,8 @@ export const sqliteDateTime = customType<{
     return isNaN(d.getTime()) ? null : d.toISOString();
   },
   fromDriver(value: string | number | null): Date {
-    if (value === null || value === undefined || value === "") return new Date(0);
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? new Date(0) : d;
+    if (value === null || value === undefined || value === "") return new Date(NaN);
+    return new Date(value);
   },
 });
 

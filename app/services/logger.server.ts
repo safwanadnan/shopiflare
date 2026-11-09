@@ -1,3 +1,5 @@
+import { requestContext } from "./request-context.server";
+
 export interface LogContext {
   shopId?: string | number | null;
   shopDomain?: string | null;
@@ -12,19 +14,13 @@ export interface Logger {
   withContext: (childContext: LogContext) => Logger;
 }
 
-function serializeError(err: any): Record<string, any> {
-  if (err instanceof Error) {
-    return {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-      ...(err.cause ? { cause: serializeError(err.cause) } : {}),
-    };
-  }
-  if (typeof err === "object" && err !== null) {
-    return err;
-  }
-  return { message: String(err) };
+function serializeError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { name: "UnknownError" };
+  return {
+    name: error.name,
+    // Exclude the error message (first line), which may contain credentials or payload data.
+    stack: error.stack?.split("\n").filter(line => /^\s+at /.test(line)).join("\n"),
+  };
 }
 
 function buildLogEntry(
@@ -32,8 +28,12 @@ function buildLogEntry(
   message: string,
   data?: Record<string, any>,
 ): Record<string, any> {
+  const context = requestContext.getStore();
   const merged: Record<string, any> = {
     message,
+    requestId: context?.requestId,
+    environment: context?.environment,
+    version: context?.version,
     shopId: data?.shopId ?? baseContext.shopId ?? null,
     shopDomain: data?.shopDomain ?? baseContext.shopDomain ?? null,
     ...baseContext,

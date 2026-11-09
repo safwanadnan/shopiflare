@@ -1,316 +1,71 @@
-# Shopiflare ⚡
+# Shopiflare
 
-> **A production-ready, ultra-fast Shopify App Boilerplate running natively on Cloudflare Workers, Cloudflare D1 (Serverless SQLite), and Drizzle ORM.**
+Shopiflare is a starter for embedded Shopify apps using React Router, Shopify App Bridge and Polaris, Cloudflare Workers, and Drizzle on D1. Fork it, give the fork its own Shopify apps and Cloudflare resources, and deploy from the fork. This template has placeholder IDs and URLs. Its GitHub workflow runs checks and dry runs only.
 
-Shopiflare combines **React Router v7**, the official **`@shopify/shopify-app-react-router`** SDK, **Cloudflare Workers**, **Cloudflare D1**, and **Drizzle ORM** to deliver a blazing-fast, serverless Shopify application with zero WebAssembly engine overhead and true global edge latency.
+## Run locally
 
----
+Use Node 22.18+ or 24 and npm. Install the [Shopify CLI](https://shopify.dev/docs/api/shopify-cli) when you need to preview or release Shopify app configuration. Wrangler is installed with the project.
 
-## ⚡ Why Drizzle ORM on Cloudflare D1?
-
-Traditional Prisma setups on Cloudflare Workers rely on a large WebAssembly (WASM) query engine file and synthetic filesystem shims, resulting in:
-- High bundle sizes and memory footprint.
-- Cold-start latency spikes due to WASM compilation.
-- Vulnerabilities during offline access token renewal and datetime conversions.
-
-**Shopiflare solves this by migrating to Drizzle ORM (`drizzle-orm/d1`):**
-- **Zero WASM Overhead:** Pure TypeScript/JavaScript SQL query builder compiled directly for the Cloudflare V8 runtime.
-- **Sub-10ms Edge Cold Starts:** Native Cloudflare D1 binding (`env.DB`) communicates directly with edge SQLite.
-- **Strict Type Safety:** Relational queries and typed schema definitions with automatic migration generation via `drizzle-kit`.
-- **Bulletproof Session Storage:** Full implementation of Shopify's `SessionStorage` interface supporting expiring offline access tokens and `refreshToken` rotation.
-
----
-
-## 🏗️ Architecture & Project Structure
-
-```
-shopiflare/
-├── app/
-│   ├── db/
-│   │   └── schema.ts               # Drizzle ORM SQLite schema (Session, Shop, Subscriptions, GDPR)
-│   ├── routes/
-│   │   ├── _index/                 # Public landing page with merchant login form
-│   │   ├── app.tsx                 # Embedded Shopify admin layout with App Bridge navigation
-│   │   ├── app._index.tsx          # Embedded app dashboard with Polaris Web Components
-│   │   ├── app.additional.tsx      # Sub-page navigation example
-│   │   ├── auth.$.tsx              # OAuth callback & background store profile enrichment
-│   │   ├── auth.login/             # Merchant login route
-│   │   └── webhooks.*              # Real-time Shopify Webhook handlers (GDPR, app, subscriptions, shop)
-│   ├── services/
-│   │   ├── logger.server.ts        # Centralized structured JSON logger with context bindings
-│   │   ├── shop.server.ts          # GraphQL store enrichment (40+ fields) and upsert routines
-│   │   └── subscription.server.ts  # Recurring billing GraphQL queries, plans & webhook sync
-│   ├── db.server.ts                # D1 Drizzle database client initialization (env.DB)
-│   ├── session-storage.server.ts   # Custom DrizzleSessionStorage with token refresh logic
-│   └── shopify.server.ts           # Shopify API configuration, hooks & auth lifecycle
-├── migrations/
-│   └── 0001_init.sql               # Production-ready SQLite SQL migration for Cloudflare D1
-├── workers/
-│   └── app.ts                      # Cloudflare Worker entrypoint forwarding env and ExecutionContext
-├── drizzle.config.ts               # Drizzle Kit configuration for migrations and schema inspection
-├── shopify.app.dev.toml            # Shopify CLI configuration for Local Development
-├── shopify.app.staging.toml        # Shopify CLI configuration for Staging
-├── shopify.app.toml                # Shopify CLI configuration for Production
-├── wrangler.jsonc                  # Cloudflare Worker, D1 & Observability config
-└── vite.config.ts                  # Vite config with Cloudflare SSR plugin & zero-WASM bundling
-```
-
----
-
-## 🌐 Multi-Environment Topology
-
-| Environment | Cloudflare Worker | D1 Database | Shopify App Config | Git Branch |
-|---|---|---|---|---|
-| **Local** | `wrangler dev` (via Vite Plugin) | Local D1 Emulation (`.wrangler/state`) | `shopify.app.development.toml` | Working Branch (`feature/*`) |
-| **Development (Remote)** | `shopiflare-development` | `shopiflare-shopify-app-db-dev` | `shopify.app.development.toml` | `develop` / `main` |
-| **Production** | `shopiflare` | `shopiflare-shopify-app-db-prod` | `shopify.app.toml` | `main` |
-
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-Ensure you have the following installed on your development machine:
-* **Node.js** (>= 20.19 or >= 22.12)
-* **Shopify CLI**: `npm install -g @shopify/cli`
-* **Cloudflare Wrangler**: `npm install -g wrangler`
-* *(Optional)* **cloudflared**: For exposing your local port to Shopify OAuth (`cloudflared tunnel`).
-
-### 2. Installation
-Clone the repository and install dependencies:
-```bash
-git clone https://github.com/safwanadnan/shopiflare.git
-cd shopiflare
-npm install
-```
-
----
-
-## 🗄️ Database Setup & Migrations with Drizzle
-
-### 1. Create Cloudflare D1 Databases
-If setting up new Cloudflare D1 databases for your app:
-```bash
-# Create Production Database
-npx wrangler d1 create shopiflare-shopify-app-db-prod
-
-# Create Development Database
-npx wrangler d1 create shopiflare-shopify-app-db-dev
-```
-*Copy the generated `database_id` values into the corresponding blocks in [`wrangler.jsonc`](./wrangler.jsonc).*
-
-### 2. Apply Initial Migrations
-Shopiflare includes the initial SQL migration in `migrations/0001_init.sql`. Apply it to your target database:
-
-```bash
-# Apply to Local D1 database (used by local dev server)
+```sh
+npm ci
+cp .dev.vars.example .dev.vars
 npm run db:migrate:local
-
-# Apply to Remote Development D1 database
-npm run db:migrate:dev
-
-# Apply to Remote Production D1 database
-npm run db:migrate:prod
+npm run dev:cf
 ```
 
-### 3. Modifying the Schema with Drizzle Kit
-When you add or update models in `app/db/schema.ts`:
-1. Generate a new SQL migration file automatically:
-   ```bash
-   npm run db:generate
+Set the Shopify development app's client ID and secret in `.dev.vars`. The app runs at `http://localhost:3000` by default and uses emulated D1 data under `.wrangler/state`. Open `/health/live` to check that the Worker responds and `/health` to check the app configuration and schema.
+
+For embedded auth and real webhook testing, use a development store and an HTTPS tunnel. Set `SHOPIFY_APP_URL` to the tunnel's origin in `.dev.vars` **and** pass that origin in the shell when starting `npm run dev:cf` so Vite accepts the tunnel host. Set the same app URL and `/auth/callback` origin in the Shopify development preview. Use [Shopify CLI's custom tunnel option](https://shopify.dev/docs/api/shopify-cli/app/app-dev#flags-propertydetail-tunnel-url) if the CLI manages the preview. Keep production credentials out of local files.
+
+## Set up a fork
+
+| Target | Worker | D1 | Shopify config |
+| --- | --- | --- | --- |
+| Local | Vite Workers runtime | Emulated `DB` | Development preview |
+| Development | `env.development` | Development database | `shopify.app.development.toml` |
+| Production | `env.production` | Production database | `shopify.app.toml` |
+
+1. Create separate Shopify apps for development and production. Replace the names, handles, client IDs, app URLs, and redirect URLs in both TOML files. Start with the minimum access scopes; the demo needs `write_products`.
+2. Choose distinct Worker names and HTTPS origins. Set the corresponding `SHOPIFY_APP_URL`, `SHOPIFY_API_KEY` (the client ID), and `SCOPES` in each named environment in `wrangler.jsonc`. For custom domains, configure the matching Cloudflare route and disable `workers_dev` if it isn't needed. Keep preview URLs off unless the app explicitly supports them.
+3. Create two D1 databases with `npx wrangler d1 create <database-name>`. Copy each name and UUID into its environment's `DB` binding. The top-level binding is for local emulation; use the development database's name and ID there. Keep the two remote databases separate.
+4. Set each app's client secret on its own Worker. Wrangler prompts for the value; for a new Worker, follow the prompt to create it or set the secret in the Cloudflare dashboard.
+
+   ```sh
+   npx wrangler secret put SHOPIFY_API_SECRET --config wrangler.jsonc --env development
+   npx wrangler secret put SHOPIFY_API_SECRET --config wrangler.jsonc --env production
    ```
-   *Drizzle Kit will inspect `app/db/schema.ts` and create the next numbered SQL migration in `migrations/`.*
-2. Apply the migration to your desired environment:
-   ```bash
-   npm run db:migrate:local  # Local
-   npm run db:migrate:dev    # Remote Development
-   npm run db:migrate:prod   # Remote Production
-   ```
 
----
+   Keep secrets out of version control, plain Wrangler vars, and build output. Rotate them deliberately and separately from routine releases.
 
-## 🔐 Environment Variables & Secrets
+## Change the database
 
-Cloudflare Workers distinguish between plain environment variables (`vars` in `wrangler.jsonc`) and encrypted secrets.
+Edit `app/db/schema.ts`, run `npm run db:generate -- --name describe_change`, and review the generated SQL and metadata before committing them. The checked-in Drizzle snapshot matches `0001_init.sql`; new generated migrations use timestamped names. Keep earlier migrations intact once applied. Write migrations for triggers or data backfills as separate SQL files and give them a name that sorts after the last applied migration.
 
-### Local Development (`.dev.vars`)
-Create a `.dev.vars` file in the root directory (gitignored):
-```env
-SHOPIFY_API_KEY=your_dev_shopify_api_key
-SHOPIFY_API_SECRET=your_dev_shopify_api_secret
-SCOPES=write_products
+Apply and test changes locally with `npm run db:migrate:local`. Use `npm run db:migrate:dev` or `npm run db:migrate:prod` only for the intended remote database. Prefer additive changes so the old Worker can still run while you apply the schema and if you need to roll back the code.
+
+## Release a configured fork
+
+Run `npm run check` to regenerate Worker and React Router types, check TypeScript, and run the infrastructure tests. For local bundle verification:
+
+```sh
+npm run build:dev
+npx wrangler deploy --dry-run --outdir /tmp/shopiflare-dry-run
 ```
 
-### Staging & Production Secrets
-Upload your Shopify API credentials as encrypted Cloudflare Worker secrets:
+Use `build:prod` for the production target. Each build rewrites Vite's Wrangler config pointer, so run the dry run immediately after the intended build.
 
-```bash
-# Development Secrets
-npx wrangler secret put SHOPIFY_API_KEY --env development
-npx wrangler secret put SHOPIFY_API_SECRET --env development
+1. Run `npm run preflight:dev` and check the target database and migration list. Apply required development migrations, then run `npm run deploy:dev`. The script checks the source config, runs the checks, builds the named environment, and verifies the **built** Worker name, Shopify app, and database before upload.
+2. Run `npm run deploy:shopify:dev` when scopes, URLs, webhooks, or extensions change. Shopify configuration releases are separate from Worker uploads.
+3. Verify `/health` reports HTTP 200 and the expected Worker version, open the app from Shopify admin, and smoke test app navigation and a webhook on a development store. Check that embedded pages and data responses return `Cache-Control: private, no-store`.
+4. Promote the same reviewed revision with `npm run preflight:prod`, the required production migrations, and `npm run deploy:prod`. Run `npm run deploy:shopify:prod` only when the Shopify configuration changed. Record the new and previous Worker version IDs. A Worker rollback does not roll back D1 migrations or a Shopify app version.
 
-# Production Secrets
-npx wrangler secret put SHOPIFY_API_KEY --env production
-npx wrangler secret put SHOPIFY_API_SECRET --env production
-```
+## Conventions inherited from production apps
 
----
+- **Merchant data and auth:** Authenticate each loader or action that reads merchant data or calls Shopify. Keep Shopify's document and boundary headers on direct loads and redirects. Embedded admin and auth routes are private and never enter the shared edge cache.
+- **Offline sessions:** Enable Shopify's [expiring offline tokens](https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens), store refresh metadata with the session, and keep tokens out of shop profiles and logs. The adapter skips legacy sessions without a valid expiry, and D1 rejects new non-expiring offline credentials. An expired access token is distinct from a non-expiring token; it may still be renewable. A delayed SDK invalidation can clear only the token it loaded. Before migrating an existing app, plan how to replace or reauthorize legacy grants. Apps with concurrent background Shopify calls should coordinate exchange, refresh, and uninstall per shop and fence stale writes and delayed uninstall events against the active installation.
+- **Webhooks:** [Verify the signature over the raw body](https://shopify.dev/docs/apps/build/webhooks/subscribe/https) before parsing it. The verifier bounds the body and checks the route's allowed topics. Webhook ingestion does not fetch or refresh a Shopify access token. Acknowledge durable work after the database write or queue handoff succeeds. Use a stable delivery or event ID for retries and handle out-of-order delivery where it can change state.
+- **Privacy:** Compliance webhooks record one intake row per shop, topic, and event, even if the Shop row is gone. Intake alone does not fulfill Shopify's [privacy requirements](https://shopify.dev/docs/apps/build/privacy-law-compliance). Implement export, deletion, and retention policies in the fork before review. Do not copy raw payloads into logs.
+- **Operations:** Worker logs carry a request ID, environment, and version where available. Keep automatic invocation logs off unless needed for diagnosis. Use `/health/live` for cheap liveness and `/health` for readiness; neither calls Shopify or returns secret values.
+- **Background work:** Use `waitUntil` for best-effort work such as profile and subscription reconciliation after auth. For work that must survive a retry or Worker interruption, add a durable job or outbox and a Queue with a dead-letter queue. Make consumers idempotent and bound attempts, batch size, and cron work. Add Hyperdrive for external Postgres and service bindings for internal Worker calls when a fork needs them.
 
-## 🔑 Session Storage & Expiring Access Tokens
-
-Shopiflare implements modern Shopify security best practices with `expiringOfflineAccessTokens: true` in `app/shopify.server.ts`.
-
-- When an offline token is issued by Shopify, it includes an expiry timestamp and a **90-day `refreshToken`**.
-- In `app/session-storage.server.ts`, `DrizzleSessionStorage` stores `refreshToken` and `refreshTokenExpires` in Cloudflare D1.
-- Upon session retrieval via `loadSession(id)`, the `refreshToken` is restored onto the Shopify `Session` instance.
-- If the offline access token has reached its expiry, Shopify's SDK automatically exchanges the `refreshToken` for a fresh access token seamlessly in the background without merchant re-authentication or 500 errors.
-
----
-
-## 🔄 Self-Healing & Throttled Subscription Syncing
-
-1. **Self-Healing on Install / Initial Access**:
-   Inside `app/routes/app.tsx`, `context.cloudflare.ctx.waitUntil` executes a background check:
-   ```ts
-   const shop = await db.query.shops.findFirst({
-     where: eq(shops.shopifyDomain, session.shop),
-     columns: { rawShopData: true },
-   });
-   if (!shop || !shop.rawShopData) {
-     await enrichShopFromGraphql(admin, session.shop, db, {
-       accessToken: session.accessToken,
-       scope: session.scope,
-     });
-     await syncAppSubscriptionsFromGraphql(admin, session.shop, db);
-   }
-   ```
-2. **Preventing Redundant Page Load Syncs**:
-   The GraphQL subscription sync is guarded **inside** the `if (!shop || !shop.rawShopData)` check. Routine page loads and tab navigations will **never** trigger unnecessary GraphQL requests or spam worker logs.
-3. **Real-time Webhook Synchronization**:
-   When a merchant updates, cancels, or changes their billing plan, Shopify triggers the `app_subscriptions/update` webhook. Shopiflare automatically processes this in `app/routes/webhooks.app_subscriptions.update.tsx` and updates Cloudflare D1 in real-time.
-
----
-
-## 💳 App Monetization & Billing
-
-Shopiflare includes a production-ready billing service (`app/services/subscription.server.ts`):
-
-- **Query Active Subscriptions**: Synchronizes current plans directly from Shopify GraphQL Admin into the `AppSubscription` D1 table.
-- **Create Recurring Subscription**:
-  ```ts
-  import { createAppSubscription } from "~/services/subscription.server";
-
-  const { confirmationUrl } = await createAppSubscription(admin, {
-    name: "Pro Plan",
-    price: 19.99,
-    returnUrl: `${appUrl}/app`,
-    trialDays: 7,
-  });
-  // Redirect merchant to confirmationUrl
-  ```
-- **Webhooks Handling**: Listens to `app_subscriptions/update` to automatically record subscription state changes (`ACTIVE`, `CANCELLED`, `FROZEN`, etc.) without polling.
-
----
-
-## 🛡️ Mandatory GDPR Compliance Webhooks
-
-Shopify requires all public apps to implement mandatory GDPR compliance endpoints before passing app store review:
-- `webhooks.customers.data_request.tsx`
-- `webhooks.customers.redact.tsx`
-- `webhooks.shop.redact.tsx`
-
-Shopiflare routes all compliance webhooks through `webhooks.compliance.tsx`, which validates HMAC signatures via `@shopify/shopify-app-react-router` and securely records requests in the `ShopifyGdprRequest` D1 table for audit compliance.
-
----
-
-## 🪵 Centralized Structured Logging
-
-Use the structured logger service across your server loaders, actions, and services:
-
-```ts
-import { logger } from "~/services/logger.server";
-
-// Standard logging
-logger.info("Fetched data successfully", { count: 10 });
-
-// Contextual child logger (automatically binds shopId and shopDomain)
-const shopLogger = logger.withContext({ shopId: "12345", shopDomain: "myshop.myshopify.com" });
-shopLogger.info("Processing merchant workflow");
-shopLogger.error("Failed to process order", { error: err });
-```
-
----
-
-## 💻 Local Development Workflow
-
-Because the Cloudflare Workers Vite plugin simulates D1 and Worker bindings directly inside Vite, you can run the full app locally:
-
-1. **Start the local Dev Server**:
-   ```bash
-   npm run dev:cf
-   ```
-   *Your server will start at `http://localhost:8787` with local D1 database emulation.*
-
-2. **Start a Cloudflare Tunnel**:
-   In a separate terminal, expose your local dev server:
-   ```bash
-   cloudflared tunnel --url http://localhost:8787
-   ```
-   *Copy the generated `https://*.trycloudflare.com` URL.*
-
-3. **Update `shopify.app.dev.toml`**:
-   Set `application_url` and `redirect_urls` to your tunnel URL.
-
-4. **Link & Test in Shopify Partner Dashboard**:
-   ```bash
-   shopify app config use dev
-   shopify app dev
-   ```
-
----
-
-## 🚢 Deployment & CI/CD
-
-### Deploy Code to Cloudflare Workers
-
-```bash
-# Deploy to Development Worker
-npm run deploy:dev
-
-# Deploy to Production Worker
-npm run deploy:prod
-```
-
-### Deploy App Configuration to Shopify
-Whenever you modify scopes, app URLs, or webhook declarations in your TOML files, sync them with Shopify:
-
-```bash
-# Deploy Development Shopify App Config
-npm run deploy:shopify:dev
-
-# Deploy Production Shopify App Config
-npm run deploy:shopify:prod
-```
-
----
-
-## 📋 Available Scripts
-
-| Script | Description |
-|---|---|
-| `npm run dev:cf` | Starts the local React Router dev server with Cloudflare Workers emulation |
-| `npm run build` | Builds the client and server bundles using Vite SSR (Zero-WASM) |
-| `npm run deploy:dev` | Builds and deploys the worker to the **Development** Cloudflare environment |
-| `npm run deploy:prod` | Builds and deploys the worker to the **Production** Cloudflare environment |
-| `npm run db:generate` | Generates new SQL migrations from `app/db/schema.ts` using Drizzle Kit |
-| `npm run db:migrate:local` | Applies SQL migrations to the local D1 database |
-| `npm run db:migrate:dev` | Applies SQL migrations to remote development D1 database |
-| `npm run db:migrate:prod` | Applies SQL migrations to remote production D1 database |
-| `npm run deploy:shopify:dev` | Pushes development app scopes, webhooks, and URLs to Shopify |
-| `npm run deploy:shopify:prod` | Pushes production app scopes, webhooks, and URLs to Shopify |
-| `npm run typecheck` | Runs TypeScript typechecker and React Router typegen |
-
----
-
-## 📄 License
-MIT
+The sample subscription service shows Admin API billing operations. For a new public app, check [Shopify App Pricing](https://shopify.dev/docs/apps/launch/billing) before adopting manual billing.

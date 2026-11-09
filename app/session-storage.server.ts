@@ -1,13 +1,34 @@
 import { Session } from "@shopify/shopify-api";
 import type { SessionStorage } from "@shopify/shopify-app-session-storage";
-import { eq, inArray, desc } from "drizzle-orm";
+import { and, eq, inArray, desc } from "drizzle-orm";
 import type { AppDb } from "./db.server";
 import { sessions, type SessionRecord, type InsertSessionRecord } from "./db/schema";
 
+function hasExpiry(expires: Date | null | undefined) {
+  return expires != null && Number.isFinite(expires.getTime());
+}
+
 export class DrizzleSessionStorage implements SessionStorage {
+  private readonly loadedTokens = new WeakMap<Session, string>();
   constructor(private db: AppDb) {}
 
   public async storeSession(session: Session): Promise<boolean> {
+    if (session.accessToken && !session.isOnline && !hasExpiry(session.expires)) {
+      throw new Error("Offline Shopify access tokens require an expiry");
+    }
+    const loaded = this.loadedTokens.get(session);
+    if (!session.accessToken) {
+      // A delayed SDK 401 may invalidate only the token used by that request.
+      if (loaded) {
+        await this.db.update(sessions).set({ accessToken: "" }).where(and(
+          eq(sessions.id, session.id),
+          eq(sessions.shop, session.shop),
+          eq(sessions.accessToken, loaded),
+        ));
+      }
+      return true;
+    }
+
     const data = this.sessionToRow(session);
 
     await this.db
@@ -18,6 +39,7 @@ export class DrizzleSessionStorage implements SessionStorage {
         set: data,
       });
 
+    this.loadedTokens.set(session, session.accessToken);
     return true;
   }
 
@@ -26,7 +48,7 @@ export class DrizzleSessionStorage implements SessionStorage {
       where: eq(sessions.id, id),
     });
 
-    if (!row) {
+    if (!row?.accessToken || (!row.isOnline && !hasExpiry(row.expires))) {
       return undefined;
     }
 
@@ -34,11 +56,7 @@ export class DrizzleSessionStorage implements SessionStorage {
   }
 
   public async deleteSession(id: string): Promise<boolean> {
-    try {
-      await this.db.delete(sessions).where(eq(sessions.id, id));
-    } catch {
-      return true;
-    }
+    await this.db.delete(sessions).where(eq(sessions.id, id));
 
     return true;
   }
@@ -56,7 +74,8 @@ export class DrizzleSessionStorage implements SessionStorage {
       orderBy: [desc(sessions.expires)],
     });
 
-    return rows.map((session) => this.rowToSession(session));
+    return rows.filter(row => row.accessToken && (row.isOnline || hasExpiry(row.expires)))
+      .map(row => this.rowToSession(row));
   }
 
   private sessionToRow(session: Session): InsertSessionRecord {
@@ -139,9 +158,8 @@ export class DrizzleSessionStorage implements SessionStorage {
       sessionParams.scope = row.scope;
     }
 
-    return Session.fromPropertyArray(Object.entries(sessionParams), true);
+    const session = Session.fromPropertyArray(Object.entries(sessionParams), true);
+    this.loadedTokens.set(session, row.accessToken);
+    return session;
   }
 }
-
-// Backwards-compatible alias
-export const PrismaSessionStorage = DrizzleSessionStorage;

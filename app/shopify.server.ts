@@ -9,27 +9,26 @@ import { getDb } from "./db.server";
 import { enrichShopFromGraphql } from "./services/shop.server";
 import { syncAppSubscriptionsFromGraphql } from "./services/subscription.server";
 import { logger } from "./services/logger.server";
+import { requestContext } from "./services/request-context.server";
 
-let cachedApp: ReturnType<typeof shopifyApp> | undefined;
+const apps = new WeakMap<Env, ReturnType<typeof shopifyApp>>();
+export const apiVersion = ApiVersion.October26;
 
 export function getShopify(env: Env) {
-  if (cachedApp) return cachedApp;
+  const cached = apps.get(env);
+  if (cached) return cached;
 
-  if (!env.SHOPIFY_API_KEY || !env.SHOPIFY_API_SECRET) {
-    throw new Error(
-      `[Shopiflare] Missing SHOPIFY_API_KEY or SHOPIFY_API_SECRET. Please configure these secrets on your Cloudflare Worker using:\n` +
-      `  npx wrangler secret put SHOPIFY_API_KEY\n` +
-      `  npx wrangler secret put SHOPIFY_API_SECRET`,
-    );
+  if (!env.SHOPIFY_API_KEY || !env.SHOPIFY_API_SECRET || !env.SHOPIFY_APP_URL) {
+    throw new Error("Configure SHOPIFY_API_KEY, SHOPIFY_API_SECRET and SHOPIFY_APP_URL for this Worker.");
   }
 
   const db = getDb(env);
-  cachedApp = shopifyApp({
+  const app = shopifyApp({
     apiKey: env.SHOPIFY_API_KEY,
     apiSecretKey: env.SHOPIFY_API_SECRET,
-    apiVersion: ApiVersion.October25,
-    scopes: env.SCOPES?.split(",") || ["write_products"],
-    appUrl: env.SHOPIFY_APP_URL || "https://shopiflare.<your-account>.workers.dev",
+    apiVersion,
+    scopes: env.SCOPES.split(",").map(scope => scope.trim()).filter(Boolean),
+    appUrl: env.SHOPIFY_APP_URL,
     authPathPrefix: "/auth",
     sessionStorage: new DrizzleSessionStorage(db),
     distribution: AppDistribution.AppStore,
@@ -38,34 +37,27 @@ export function getShopify(env: Env) {
     },
     hooks: {
       afterAuth: async ({ session, admin }) => {
-        try {
-          await enrichShopFromGraphql(admin, session.shop, db, {
-            accessToken: session.accessToken,
-            scope: session.scope,
-          });
+        const context = requestContext.getStore();
+        if (context?.afterAuthSyncScheduled) return;
+        if (context) context.afterAuthSyncScheduled = true;
+        const sync = (async () => {
+          await enrichShopFromGraphql(admin, session.shop, db, { scope: session.scope });
           await syncAppSubscriptionsFromGraphql(admin, session.shop, db);
-        } catch (error: any) {
-          logger.error(`Failed afterAuth hook background sync for ${session.shop}`, {
-            shopDomain: session.shop,
-            error,
-          });
-        }
+        })().catch(error => {
+          logger.error("shopify.after_auth_sync_failed", { shopDomain: session.shop, error });
+        });
+        if (context) context.execution.waitUntil(sync);
+        else await sync;
       },
     },
     ...(env.SHOP_CUSTOM_DOMAIN
       ? { customShopDomains: [env.SHOP_CUSTOM_DOMAIN] }
       : {}),
   });
-  return cachedApp;
+  apps.set(env, app);
+  return app;
 }
 
-export const apiVersion = ApiVersion.October25;
-
-export function addDocumentResponseHeaders(
-  request: Request,
-  headers: Headers,
-) {
-  if (cachedApp) {
-    cachedApp.addDocumentResponseHeaders(request, headers);
-  }
+export function addDocumentResponseHeaders(request: Request, headers: Headers, env: Env) {
+  getShopify(env).addDocumentResponseHeaders(request, headers);
 }

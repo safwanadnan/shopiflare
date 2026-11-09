@@ -1,0 +1,22 @@
+name: Check boilerplate
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:${{ matrix.target }}
+      - run: npx wrangler deploy --dry-run --outdir /tmp/shopiflare-dry-run
