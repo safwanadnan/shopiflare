@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";
 import { parse as parseToml } from "smol-toml";
+import { checkLiveRelease } from "./check-live-release.mjs";
 
 const configFile = "wrangler.jsonc";
 const [environment, ...flags] = process.argv.slice(2);
@@ -24,7 +25,8 @@ const configured = value => typeof value === "string" && value.trim() && !/[<>]/
 
 try {
   assert(["development", "production"].includes(environment), "Choose development or production.");
-  assert(flags.length === 0 || (flags.length === 1 && flags[0] === "--built"), "Use only the optional --built flag.");
+  assert(flags.every(flag => ["--built", "--live"].includes(flag)) && new Set(flags).size === flags.length,
+    "Use only the optional --built and --live flags.");
   const root = readJsonc(configFile);
   const config = root.env?.[environment];
   const other = root.env?.[environment === "development" ? "production" : "development"];
@@ -50,7 +52,9 @@ try {
   assert(typeof vars.SCOPES === "string" && typeof app.access_scopes?.scopes === "string" &&
     scopes(vars.SCOPES) === scopes(app.access_scopes.scopes), "Shopify scopes must match between Wrangler and TOML.");
   assert(vars.ENVIRONMENT === environment, "Set ENVIRONMENT to the selected release target.");
-  assert(config.secrets?.required?.includes("SHOPIFY_API_SECRET") && !("SHOPIFY_API_SECRET" in vars),
+  const requiredSecrets = config.secrets?.required;
+  assert(Array.isArray(requiredSecrets) && requiredSecrets.includes("SHOPIFY_API_SECRET") &&
+    requiredSecrets.every(name => typeof name === "string" && !(name in vars)),
     "Declare SHOPIFY_API_SECRET as a required secret and keep it out of plain variables.");
   assert(config.version_metadata?.binding === "VERSION_METADATA", "Configure the Worker version metadata binding.");
 
@@ -61,15 +65,18 @@ try {
     assert(typeof pointer.configPath === "string", "Missing Vite deploy config path. Rebuild the target.");
     const built = readJsonc(resolve(dirname(pointerFile), pointer.configPath));
     assert(built.name === config.name &&
+      built.account_id === (config.account_id ?? root.account_id) &&
       built.vars?.ENVIRONMENT === environment &&
       built.vars?.SHOPIFY_APP_URL === vars.SHOPIFY_APP_URL &&
       built.vars?.SHOPIFY_API_KEY === vars.SHOPIFY_API_KEY &&
       scopes(built.vars?.SCOPES) === scopes(vars.SCOPES) &&
-      d1(built)?.database_id === database.database_id,
-      "Built Worker targets the wrong app or database. Rebuild the selected environment.");
+      d1(built)?.database_id === database.database_id &&
+      JSON.stringify(built.secrets?.required?.slice().sort()) === JSON.stringify(requiredSecrets.slice().sort()),
+      "Built Worker differs from the selected account, app, database, or required secrets. Rebuild the selected environment.");
   }
 
-  console.log(`Release configuration passed: ${environment}${flags.length ? " (built)" : ""}`);
+  if (flags.includes("--live")) checkLiveRelease(environment, configFile, config, database);
+  console.log(`Release configuration passed: ${environment}${flags.length ? ` (${flags.map(flag => flag.slice(2)).join(", ")})` : ""}`);
 } catch (error) {
   console.error(`Release configuration check failed: ${error.message}`);
   process.exitCode = 1;

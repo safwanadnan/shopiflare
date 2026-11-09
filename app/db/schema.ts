@@ -61,6 +61,16 @@ export const sessions = sqliteTable(
   ],
 );
 
+// Per-shop authorization state and short-lived lease. Tokens stay in Session.
+export const shopifyAuthStates = sqliteTable("ShopifyAuthState", {
+  shop: text("shop").primaryKey().notNull(),
+  generation: integer("generation").notNull().default(0),
+  authorizedAt: integer("authorizedAt").notNull().default(0),
+  uninstalledAt: text("uninstalledAt"),
+  leaseToken: text("leaseToken"),
+  leaseExpiresAt: integer("leaseExpiresAt").notNull().default(0),
+});
+
 // 2. Shop Table (Core Merchant Store State & Metadata)
 export const shops = sqliteTable(
   "Shop",

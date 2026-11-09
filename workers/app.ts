@@ -17,6 +17,7 @@ async function readiness(env: Env) {
     const [expiryGuard] = await env.DB.batch<{ count: number }>([
       env.DB.prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE type = 'trigger' AND name IN ('Session_offline_expiry_insert', 'Session_offline_expiry_update')"),
       env.DB.prepare("SELECT refreshTokenExpires FROM Session LIMIT 0"),
+      env.DB.prepare("SELECT generation, authorizedAt, uninstalledAt, leaseToken, leaseExpiresAt FROM ShopifyAuthState LIMIT 0"),
       env.DB.prepare("SELECT id FROM Shop LIMIT 0"),
       env.DB.prepare("SELECT id FROM AppSubscription LIMIT 0"),
       env.DB.prepare("SELECT id FROM ShopifyGdprRequest LIMIT 0"),

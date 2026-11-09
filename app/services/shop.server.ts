@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { AppDb } from "../db.server";
 import { shops, type ShopRecord, type InsertShopRecord } from "../db/schema";
 import { logger } from "./logger.server";
@@ -161,7 +161,6 @@ export async function enrichShopFromGraphql(
       currencyFormats: rawShop.currencyFormats ? JSON.stringify(rawShop.currencyFormats) : null,
 
       ...(authCredentials ? { scope: authCredentials.scope ?? null } : {}),
-      uninstalledAt: null,
 
       rawShopData: JSON.stringify(rawShop),
 
@@ -175,7 +174,12 @@ export async function enrichShopFromGraphql(
 
     await db
       .insert(shops)
-      .values(shopData)
+      .values({
+        ...shopData,
+        // A profile may be created after a signed uninstall, even when there
+        // was no profile for the uninstall handler to mark.
+        uninstalledAt: sql`(SELECT uninstalledAt FROM ShopifyAuthState WHERE shop = ${shopDomain})`,
+      })
       .onConflictDoUpdate({
         target: shops.shopifyDomain,
         set: updateSet,
@@ -268,7 +272,10 @@ export async function enrichShopFromWebhookPayload(
 
     await db
       .insert(shops)
-      .values(shopData)
+      .values({
+        ...shopData,
+        uninstalledAt: sql`(SELECT uninstalledAt FROM ShopifyAuthState WHERE shop = ${shopDomain})`,
+      })
       .onConflictDoUpdate({
         target: shops.shopifyDomain,
         set: updateSet,
